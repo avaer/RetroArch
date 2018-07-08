@@ -951,20 +951,30 @@ static bool gl_frame(void *data, const void *frame,
    unsigned width                      = video_info->width;
    unsigned height                     = video_info->height;
 
+   printf("gl_frame1 %d %d %d %d %d\n", data, frame, frame_width, frame_height, frame_count);
+
    if (!gl)
       return false;
 
    context_bind_hw_render(false);
 
+   printf("gl_frame2\n");
+
    if (gl->core_context_in_use && gl->renderchain_driver->bind_vao)
       gl->renderchain_driver->bind_vao(gl, gl->renderchain_data);
 
+   printf("gl_frame3\n");
+
    video_info->cb_shader_use(gl, video_info->shader_data, 1, true);
+
+   printf("gl_frame4\n");
 
 #ifdef IOS
    /* Apparently the viewport is lost each frame, thanks Apple. */
    gl_set_viewport(gl, video_info, width, height, false, true);
 #endif
+
+   printf("gl_frame5.1\n");
 
    /* Render to texture in first pass. */
    if (gl->fbo_inited)
@@ -974,10 +984,16 @@ static bool gl_frame(void *data, const void *frame,
                gl, gl->renderchain_data, frame_width, frame_height,
                gl->vp_out_width, gl->vp_out_height);
 
+      printf("gl_frame5.2\n");
+
       if (gl->renderchain_driver->start_render)
          gl->renderchain_driver->start_render(gl, gl->renderchain_data,
                video_info);
+
+      printf("gl_frame5.3\n");
    }
+
+   printf("gl_frame6\n");
 
    if (gl->should_resize)
    {
@@ -991,26 +1007,41 @@ static bool gl_frame(void *data, const void *frame,
       video_info->cb_set_resize(video_info->context_data,
             mode.width, mode.height);
 
+      printf("gl_frame7\n");
+
       if (gl->fbo_inited)
       {
          if (gl->renderchain_driver->check_fbo_dimensions)
             gl->renderchain_driver->check_fbo_dimensions(gl,
                   gl->renderchain_data);
 
+         printf("gl_frame8\n");
+
          /* Go back to what we're supposed to do,
           * render to FBO #0. */
          if (gl->renderchain_driver->start_render)
             gl->renderchain_driver->start_render(gl, gl->renderchain_data,
                   video_info);
+
+         printf("gl_frame9\n");
       }
-      else
+      else {
          gl_set_viewport(gl, video_info, width, height, false, true);
+
+         printf("gl_frame10\n");
+      }
    }
+
+   printf("gl_frame11\n");
 
    if (frame)
       gl->tex_index = ((gl->tex_index + 1) % gl->textures);
 
+   printf("gl_frame12\n");
+
    glBindTexture(GL_TEXTURE_2D, gl->texture[gl->tex_index]);
+
+   printf("gl_frame13\n");
 
    /* Can be NULL for frame dupe / NULL render. */
    if (frame)
@@ -1076,7 +1107,9 @@ static bool gl_frame(void *data, const void *frame,
       set_texture_coords(feedback_info.coord, xamt, yamt);
    }
 
-   glClear(GL_COLOR_BUFFER_BIT);
+   printf("set shader 1\n");
+
+   glClear(GL_COLOR_BUFFER_BIT); // XXX
 
    params.data          = gl;
    params.width         = frame_width;
@@ -1092,17 +1125,29 @@ static bool gl_frame(void *data, const void *frame,
    params.fbo_info      = NULL;
    params.fbo_info_cnt  = 0;
 
+   printf("set shader 2\n");
+
    video_shader_driver_set_parameters(&params);
+
+   printf("set shader 3\n");
 
    gl->coords.vertices  = 4;
    coords.handle_data   = NULL;
    coords.data          = &gl->coords;
 
+   printf("set shader 4\n");
+
    video_driver_set_coords(&coords);
+
+   printf("set shader 5\n");
 
    video_info->cb_set_mvp(gl, video_info->shader_data, &gl->mvp);
 
+   printf("set shader 6\n");
+
    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+   printf("set shader 3\n");
 
    if (gl->fbo_inited && gl->renderchain_driver->renderchain_render)
       gl->renderchain_driver->renderchain_render(gl, gl->renderchain_data,
