@@ -1599,13 +1599,6 @@ static void gl_glsl_use(void *data, void *shader_data, unsigned idx, bool set_ac
       id = (GLuint)idx;
 
    glUseProgram(id);
-  
-   GLint location = glGetUniformLocation(id, "Texture");
-   printf("got location %d\n", location);
-
-   GLint values[16];
-   glGetUniformiv(id, location, values);
-   printf("got texture %d\n", values[0]);
 }
 
 static unsigned gl_glsl_num(void *data)
