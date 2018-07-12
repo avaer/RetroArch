@@ -942,8 +942,6 @@ static bool gl_frame(void *data, const void *frame,
       unsigned pitch, const char *msg,
       video_frame_info_t *video_info)
 {
-   return true;
-
    video_shader_ctx_coords_t coords;
    video_shader_ctx_params_t params;
    struct video_tex_info feedback_info;
