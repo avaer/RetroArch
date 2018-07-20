@@ -114,28 +114,34 @@ const replacements = [
      function requestAnimationFrame(func) {
         if (Module.display) {
           Module.display.requestAnimationFrame(function() {
+            Module.preRender();
+
             Module.display.getFrameData(frameData);
 
             func.apply(this, arguments);
 
-            Module.renderScene();
+            Module.postRender();
 
             // display.submitFrame();
           });
         } else if (typeof window === "undefined") {
             Browser.fakeRequestAnimationFrame(function() {
+              Module.preRender();
+
               func.apply(this, arguments);
 
-              Module.renderScene();
+              Module.postRender();
             });
         } else {
             if (!window.requestAnimationFrame) {
                 window.requestAnimationFrame = window["requestAnimationFrame"] || window["mozRequestAnimationFrame"] || window["webkitRequestAnimationFrame"] || window["msRequestAnimationFrame"] || window["oRequestAnimationFrame"] || Browser.fakeRequestAnimationFrame
             }
             window.requestAnimationFrame(function() {
+              Module.preRender();
+
               func.apply(this, arguments);
 
-              Module.renderScene();
+              Module.postRender();
             })
         }
     },
