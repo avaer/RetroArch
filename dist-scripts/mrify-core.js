@@ -8,7 +8,7 @@ const replacements = [
     // hack 0
     const frameData = typeof window.VRFrameData !== 'undefined' ? new window.VRFrameData() : null;
   `],
-  [/(function _glUseProgram[\s\S]+?\))[\s\S]+?(})/gm, `
+  [/(function _glUseProgram\s*\([\s\S]+?\))[\s\S]+?(})/gm, `
     let hackedProgram = null;
     function _glUseProgram(program) {
       // hack 1
@@ -42,7 +42,7 @@ const replacements = [
       GLctx.shaderSource(shaderObj, source);
     }
   `],
-  [/(function _glAttachShader[\s\S]+?\))[\s\S]+?(})/gm, `
+  [/(function _glAttachShader\s*\([\s\S]+?\))[\s\S]+?(})/gm, `
     function _glAttachShader(program, shader) {
       // hack 3
       const programObj = GL.programs[program];
@@ -51,7 +51,7 @@ const replacements = [
       GLctx.attachShader(programObj, shaderObj)
     }
   `],
-  [/(function _glDrawArrays[\s\S]+?\))[\s\S]+?(})/gm, `
+  [/(function _glDrawArrays\s*\([\s\S]+?\))[\s\S]+?(})/gm, `
     const localFloat32Array = new Float32Array(16);
     const localMatrix = new THREE.Matrix4();
     const scale = 0.001;
@@ -114,7 +114,7 @@ const replacements = [
       }
     }
   `],
-  [/(function requestAnimationFrame[\s\S]+?\))[\s\S]+?(},)/gm, `
+  [/(function requestAnimationFrame\s*\([\s\S]+?\))[\s\S]+?(},)/gm, `
      function requestAnimationFrame(func) {
         if (Module.display) {
           Module.display.requestAnimationFrame(function() {
@@ -150,7 +150,7 @@ const replacements = [
         }
     },
   `],
-  [/(function _emscripten_set_main_loop_timing[\s\S]+?\)[\s\S]+?{)/gm, `
+  [/(function _emscripten_set_main_loop_timing\s*\([\s\S]+?\)[\s\S]+?{)/gm, `
     $1
     mode = 1;
   `],
