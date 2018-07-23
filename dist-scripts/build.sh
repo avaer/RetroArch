@@ -10,3 +10,4 @@ emmake ./dist-cores.sh emscripten
 # sed -i -e 's/nullFunc_iii(x) {/nullFunc_iii(x) { return 0;/g' ../pkg/emscripten/*_libretro.js
 cp ../pkg/emscripten/*_libretro.{js,wasm} ~/emukit/assets/frontend/bundle/
 # ./mrify-core.js ~/emukit/assets/frontend/bundle/pcsx_rearmed_libretro.js >~/emukit/assets/frontend/bundle/pcsx_rearmed_mr_libretro.js
+# ./mrify-core.js ~/emukit/assets/frontend/bundle/parallel_n64_libretro.js >~/emukit/assets/frontend/bundle/parallel_n64_mr_libretro.js
