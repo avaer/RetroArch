@@ -16,6 +16,9 @@ const replacements = [
       GLctx.useProgram(program);
 
       if (program && program.hacked) {
+        if (!program.vrLocation) {
+          program.vrLocation = GLctx.getUniformLocation(program, 'uVr');
+        }
         if (!program.modelViewLocation) {
           program.modelViewLocation = GLctx.getUniformLocation(program, 'uModelViewMatrix');
         }
@@ -33,7 +36,7 @@ const replacements = [
       // hack 2
       const source = GL.getSource(shader, count, string, length);
       const shaderObj = GL.shaders[shader];
-      if (Module.vr && shaderObj.type === GLctx.VERTEX_SHADER && /uniform mat4 uModelViewMatrix;/.test(source)) {
+      if (Module.vr && shaderObj.type === GLctx.VERTEX_SHADER && /uniform int uVr;/.test(source)) {
         shaderObj.hacked = true;
       }
       GLctx.shaderSource(shaderObj, source);
@@ -78,6 +81,7 @@ const replacements = [
             // .getInverse(localMatrix)
             .toArray(localFloat32Array)
 
+          GLctx.uniform1i(hackedProgram.vrLocation, 1);
           GLctx.uniformMatrix4fv(hackedProgram.modelViewLocation, false, localFloat32Array);
           GLctx.uniformMatrix4fv(hackedProgram.projectionLocation, false, frameData.leftProjectionMatrix);
         }
