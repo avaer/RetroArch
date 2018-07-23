@@ -3,7 +3,7 @@
 const fs = require('fs');
 
 const replacements = [
-  [/(\nvar Module = .+?\n)/gm, `
+  [/((?:^|\n)var Module = .+?\n)/gm, `
     $1
     // hack 0
     const frameData = typeof window.VRFrameData !== 'undefined' ? new window.VRFrameData() : null;
