@@ -59,12 +59,12 @@ const replacements = [
     }
   `],
   [/(function _glDrawArrays\s*\([\s\S]+?\))[\s\S]+?(})/gm, `
-    const localFloat32Array = new Float32Array(16);
+    /* const localFloat32Array = new Float32Array(16);
     const localMatrix = new THREE.Matrix4();
     const scale = 0.001;
     const transformMatrix = new THREE.Matrix4()
       .makeScale(scale, -scale, 1)
-      .premultiply(new THREE.Matrix4().makeTranslation(0, 1, 0));
+      .premultiply(new THREE.Matrix4().makeTranslation(0, 1, 0)); */
 
     function _glDrawArrays(mode, first, count) {
       // hack 4
@@ -81,15 +81,15 @@ const replacements = [
 
         GLctx.disable(GLctx.SCISSOR_TEST);
         if (hackedProgram) {
-          localMatrix
+          /* localMatrix
             .fromArray(frameData.leftViewMatrix)
             // .getInverse(localMatrix)
             .multiply(transformMatrix)
             // .getInverse(localMatrix)
-            .toArray(localFloat32Array)
+            .toArray(localFloat32Array) */
 
           GLctx.uniform1i(hackedProgram.vrLocation, 1);
-          GLctx.uniformMatrix4fv(hackedProgram.modelViewLocation, false, localFloat32Array);
+          GLctx.uniformMatrix4fv(hackedProgram.modelViewLocation, false, frameData.leftViewMatrix);
           GLctx.uniformMatrix4fv(hackedProgram.projectionLocation, false, frameData.leftProjectionMatrix);
         }
       }
@@ -105,14 +105,14 @@ const replacements = [
 
           GLctx.disable(GLctx.SCISSOR_TEST);
           if (hackedProgram) {
-            localMatrix
+            /* localMatrix
               .fromArray(frameData.rightViewMatrix)
               // .getInverse(localMatrix)
               .multiply(transformMatrix)
               // .getInverse(localMatrix)
-              .toArray(localFloat32Array);
+              .toArray(localFloat32Array); */
 
-            GLctx.uniformMatrix4fv(hackedProgram.modelViewLocation, false, localFloat32Array);
+            GLctx.uniformMatrix4fv(hackedProgram.modelViewLocation, false, frameData.rightViewMatrix);
             GLctx.uniformMatrix4fv(hackedProgram.projectionLocation, false, frameData.rightProjectionMatrix);
           }
         }
