@@ -31,6 +31,13 @@ const replacements = [
       }
     }
   `],
+  [/(function _glDisable\s*\([\s\S]+?\))[\s\S]+?(})/gm, `
+    function _glDisable(flag) {
+      if (flag !== GLctx.DEPTH_TEST) {
+        GLctx['disable'](flag);
+      }
+    }
+  `],
   [/(function _glShaderSource[\s\S]+?\))[\s\S]+?(})/gm, `
     function _glShaderSource(shader, count, string, length) {
       // hack 2
