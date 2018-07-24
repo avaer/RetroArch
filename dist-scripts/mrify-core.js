@@ -9,7 +9,7 @@ const replacements = [
     const frameData = typeof window.VRFrameData !== 'undefined' ? new window.VRFrameData() : null;
     Module.preRender = (preRender => function() {
        if (/pcsx/.test(core)) {
-         renderer.clear(true, true, true);
+         userDrew = true;
        }
        return preRender.apply(this, arguments);
      })(Module.preRender);
