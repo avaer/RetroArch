@@ -7,6 +7,12 @@ const replacements = [
     $1
     // hack 0
     const frameData = typeof window.VRFrameData !== 'undefined' ? new window.VRFrameData() : null;
+    Module.preRender = (preRender => function() {
+       if (/pcsx/.test(core)) {
+         renderer.clear(true, true, true);
+       }
+       return preRender.apply(this, arguments);
+     })(Module.preRender);
   `],
   [/(function _glUseProgram\s*\([\s\S]+?\))[\s\S]+?(})/gm, `
     let hackedProgram = null;
