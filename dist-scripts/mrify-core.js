@@ -86,7 +86,6 @@ const replacements = [
       if (leftEyeParameters) {
         GLctx.viewport(0, 0, leftEyeParameters.renderWidth, leftEyeParameters.renderHeight);
 
-        GLctx.disable(GLctx.SCISSOR_TEST);
         if (hackedProgram) {
           /* localMatrix
             .fromArray(frameData.leftViewMatrix)
@@ -99,7 +98,10 @@ const replacements = [
           GLctx.uniformMatrix4fv(hackedProgram.modelViewLocation, false, frameData.leftViewMatrix);
           GLctx.uniformMatrix4fv(hackedProgram.projectionLocation, false, frameData.leftProjectionMatrix);
         }
+      } else {
+        GLctx.viewport(0, 0, window.innerWidth, window.innerHeight);
       }
+      GLctx.disable(GLctx.SCISSOR_TEST);
       GLctx.drawArrays(mode, first, count);
       // GL.postDrawHandleClientVertexAttribBindings()
 
@@ -110,7 +112,6 @@ const replacements = [
         if (leftEyeParameters && rightEyeParameters) {
           GLctx.viewport(leftEyeParameters.renderWidth, 0, rightEyeParameters.renderWidth, rightEyeParameters.renderHeight);
 
-          GLctx.disable(GLctx.SCISSOR_TEST);
           if (hackedProgram) {
             /* localMatrix
               .fromArray(frameData.rightViewMatrix)
