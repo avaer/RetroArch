@@ -169,6 +169,7 @@ const replacements = [
     $1
     mode = 1;
   `],
+  [/(var (?:wasmTextFile|wasmBinaryFile|asmjsCodeFile) = ')/gm, `$1/assets/frontend/bundle/`],
   /* [/(function _glBindFramebuffer[\s\S]+?\))[\s\S]+?(})/gm, `
     function _glBindFramebuffer(target, framebuffer) {
       if (!Module.display) {
