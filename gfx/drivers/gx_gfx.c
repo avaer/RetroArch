@@ -512,15 +512,15 @@ static void gx_set_video_mode(void *data, unsigned fbWidth, unsigned lines,
 
    if (tvmode == VI_PAL)
    {
-      refresh_rate = 50.0f;
+      refresh_rate = 90.0f;
       if (modetype == VI_NON_INTERLACE)
-         refresh_rate = 50.0801f;
+         refresh_rate = 90.0f;
    }
    else
    {
-      refresh_rate = 59.94f;
+      refresh_rate = 90.0f;
       if (modetype == VI_NON_INTERLACE)
-         refresh_rate = 59.8261f;
+         refresh_rate = 90.0f;
    }
 
    driver_ctl(RARCH_DRIVER_CTL_SET_REFRESH_RATE, &refresh_rate);
