@@ -64,7 +64,6 @@ typedef struct
    const char* fname;
 } dat_converter_token_t;
 
-
 typedef struct dat_converter_map_t dat_converter_map_t;
 typedef struct dat_converter_list_t dat_converter_list_t;
 typedef union dat_converter_list_item_t dat_converter_list_item_t;
@@ -99,7 +98,6 @@ union dat_converter_list_item_t
    dat_converter_token_t token;
    dat_converter_list_t* list;
 };
-
 
 struct dat_converter_bt_node_t
 {
@@ -211,7 +209,6 @@ static dat_converter_bt_node_t* dat_converter_bt_node_insert(
 
    return NULL;
 }
-
 
 static void dat_converter_list_append(dat_converter_list_t* dst, void* item)
 {
@@ -534,7 +531,7 @@ static dat_converter_list_t* dat_converter_parser(
                   {
                      if (warning_displayed == false)
                      {
-                        printf("  - Missing match key '");
+                        printf("    - Missing match key '");
                         while (match_key->next)
                         {
                            printf("%s.", match_key->value);
@@ -785,7 +782,7 @@ int main(int argc, char** argv)
 
       if (!dat_file)
       {
-         printf("could not open dat file '%s': %s\n",
+         printf("  could not open dat file '%s': %s\n",
                *argv, strerror(errno));
          dat_converter_exit(1);
       }
@@ -798,7 +795,7 @@ int main(int argc, char** argv)
       fclose(dat_file);
       (*dat_buffer)[dat_file_size] = '\0';
 
-      printf("Parsing dat file '%s'...\n", *argv);
+      printf("  %s\n", *argv);
       dat_lexer_list  = dat_converter_lexer(*dat_buffer, *argv);
       dat_parser_list = dat_converter_parser(
             dat_parser_list, dat_lexer_list, match_key);

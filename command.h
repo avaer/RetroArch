@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2016 - Daniel De Matteis
- *  Copyright (C) 2016 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -29,14 +29,6 @@
 
 RETRO_BEGIN_DECLS
 
-typedef struct command command_t;
-
-typedef struct command_handle
-{
-   command_t *handle;
-   unsigned id;
-} command_handle_t;
-
 enum event_command
 {
    CMD_EVENT_NONE = 0,
@@ -48,6 +40,7 @@ enum event_command
    CMD_EVENT_LOAD_CORE,
    CMD_EVENT_LOAD_CORE_PERSIST,
    CMD_EVENT_UNLOAD_CORE,
+   CMD_EVENT_CLOSE_CONTENT,
    CMD_EVENT_LOAD_STATE,
    /* Swaps the current state with what's on the undo load buffer */
    CMD_EVENT_UNDO_LOAD_STATE,
@@ -72,17 +65,20 @@ enum event_command
    CMD_EVENT_REWIND_INIT,
    /* Toggles rewind. */
    CMD_EVENT_REWIND_TOGGLE,
-   /* Deinitializes autosave. */
-   CMD_EVENT_AUTOSAVE_DEINIT,
    /* Initializes autosave. */
    CMD_EVENT_AUTOSAVE_INIT,
-   CMD_EVENT_AUTOSAVE_STATE,
    /* Stops audio. */
    CMD_EVENT_AUDIO_STOP,
    /* Starts audio. */
    CMD_EVENT_AUDIO_START,
    /* Mutes audio. */
    CMD_EVENT_AUDIO_MUTE_TOGGLE,
+   /* Toggles FPS counter. */
+   CMD_EVENT_FPS_TOGGLE,
+   /* Gathers diagnostic info about the system and RetroArch configuration, then sends it to our servers. */
+   CMD_EVENT_SEND_DEBUG_INFO,
+   /* Toggles netplay hosting. */
+   CMD_EVENT_NETPLAY_HOST_TOGGLE,
    /* Initializes overlay. */
    CMD_EVENT_OVERLAY_INIT,
    /* Deinitializes overlay. */
@@ -95,10 +91,6 @@ enum event_command
    CMD_EVENT_OVERLAY_NEXT,
    /* Deinitializes overlay. */
    CMD_EVENT_DSP_FILTER_INIT,
-   /* Deinitializes graphics filter. */
-   CMD_EVENT_DSP_FILTER_DEINIT,
-   /* Deinitializes GPU recoring. */
-   CMD_EVENT_GPU_RECORD_DEINIT,
    /* Initializes recording system. */
    CMD_EVENT_RECORD_INIT,
    /* Deinitializes recording system. */
@@ -115,19 +107,12 @@ enum event_command
    CMD_EVENT_CORE_DEINIT,
    /* Initializes core. */
    CMD_EVENT_CORE_INIT,
-   /* Set audio blocking state. */
-   CMD_EVENT_AUDIO_SET_BLOCKING_STATE,
-   /* Set audio nonblocking state. */
-   CMD_EVENT_AUDIO_SET_NONBLOCKING_STATE,
    /* Apply video state changes. */
    CMD_EVENT_VIDEO_APPLY_STATE_CHANGES,
    /* Set video blocking state. */
    CMD_EVENT_VIDEO_SET_BLOCKING_STATE,
-   /* Set video nonblocking state. */
-   CMD_EVENT_VIDEO_SET_NONBLOCKING_STATE,
    /* Sets current aspect ratio index. */
    CMD_EVENT_VIDEO_SET_ASPECT_RATIO,
-   CMD_EVENT_RESET_CONTEXT,
    /* Restarts RetroArch. */
    CMD_EVENT_RESTART_RETROARCH,
    /* Shutdown the OS */
@@ -146,7 +131,7 @@ enum event_command
    CMD_EVENT_UNPAUSE,
    /* Unpauses retroArch. */
    CMD_EVENT_PAUSE,
-   CMD_EVENT_PAUSE_CHECKS,
+   CMD_EVENT_MENU_RESET_TO_DEFAULT_CONFIG,
    CMD_EVENT_MENU_SAVE_CURRENT_CONFIG,
    CMD_EVENT_MENU_SAVE_CURRENT_CONFIG_OVERRIDE_CORE,
    CMD_EVENT_MENU_SAVE_CURRENT_CONFIG_OVERRIDE_CONTENT_DIR,
@@ -155,23 +140,12 @@ enum event_command
    CMD_EVENT_MENU_PAUSE_LIBRETRO,
    /* Toggles menu on/off. */
    CMD_EVENT_MENU_TOGGLE,
-   CMD_EVENT_MENU_REFRESH,
    /* Applies shader changes. */
    CMD_EVENT_SHADERS_APPLY_CHANGES,
-   /* Initializes shader directory. */
-   CMD_EVENT_SHADER_DIR_INIT,
-   /* Deinitializes shader directory. */
-   CMD_EVENT_SHADER_DIR_DEINIT,
-   /* Initializes controllers. */
-   CMD_EVENT_CONTROLLERS_INIT,
-   /* Initializes cheats. */
-   CMD_EVENT_CHEATS_INIT,
-   /* Deinitializes cheats. */
-   CMD_EVENT_CHEATS_DEINIT,
+   /* A new shader preset has been loaded */
+   CMD_EVENT_SHADER_PRESET_LOADED,
    /* Apply cheats. */
    CMD_EVENT_CHEATS_APPLY,
-   /* Deinitializes network system. */
-   CMD_EVENT_NETWORK_DEINIT,
    /* Initializes network system. */
    CMD_EVENT_NETWORK_INIT,
    /* Initializes netplay system with a string or no host specified. */
@@ -184,22 +158,10 @@ enum event_command
    CMD_EVENT_NETPLAY_DEINIT,
    /* Switch between netplay gaming and watching. */
    CMD_EVENT_NETPLAY_GAME_WATCH,
-   /* Initializes BSV movie. */
-   CMD_EVENT_BSV_MOVIE_INIT,
-   /* Deinitializes BSV movie. */
-   CMD_EVENT_BSV_MOVIE_DEINIT,
-   /* Initializes command interface. */
-   CMD_EVENT_COMMAND_INIT,
-   /* Deinitialize command interface. */
-   CMD_EVENT_COMMAND_DEINIT,
-   /* Initializes remote gamepad interface. */
-   CMD_EVENT_REMOTE_INIT,
-   /* Deinitializes remote gamepad interface. */
-   CMD_EVENT_REMOTE_DEINIT,
-   /* Initializes keyboard to gamepad mapper interface. */
-   CMD_EVENT_MAPPER_INIT,
-   /* Deinitializes keyboard to gamepad mapper interface. */
-   CMD_EVENT_MAPPER_DEINIT,
+   /* Start hosting netplay. */
+   CMD_EVENT_NETPLAY_ENABLE_HOST,
+   /* Disconnect from the netplay host. */
+   CMD_EVENT_NETPLAY_DISCONNECT,
    /* Reinitializes audio driver. */
    CMD_EVENT_AUDIO_REINIT,
    /* Resizes windowed scale. Will reinitialize video driver. */
@@ -211,6 +173,8 @@ enum event_command
    CMD_EVENT_DISK_NEXT,
    /* Cycle to previous disk. */
    CMD_EVENT_DISK_PREV,
+   /* Switch to specified disk index */
+   CMD_EVENT_DISK_INDEX,
    /* Appends disk image to disk image list. */
    CMD_EVENT_DISK_APPEND_IMAGE,
    /* Stops rumbling. */
@@ -223,39 +187,33 @@ enum event_command
    CMD_EVENT_UI_COMPANION_TOGGLE,
    /* Toggles fullscreen mode. */
    CMD_EVENT_FULLSCREEN_TOGGLE,
-   CMD_EVENT_PERFCNT_REPORT_FRONTEND_LOG,
    CMD_EVENT_VOLUME_UP,
    CMD_EVENT_VOLUME_DOWN,
    CMD_EVENT_MIXER_VOLUME_UP,
    CMD_EVENT_MIXER_VOLUME_DOWN,
-   CMD_EVENT_DISABLE_OVERRIDES,
-   CMD_EVENT_RESTORE_REMAPS,
-   CMD_EVENT_RESTORE_DEFAULT_SHADER_PRESET,
    CMD_EVENT_DISCORD_INIT,
-   CMD_EVENT_DISCORD_DEINIT,
    CMD_EVENT_DISCORD_UPDATE,
-   CMD_EVENT_LIBUI_TEST
+   CMD_EVENT_OSK_TOGGLE,
+   CMD_EVENT_RECORDING_TOGGLE,
+   CMD_EVENT_STREAMING_TOGGLE,
+   CMD_EVENT_AI_SERVICE_TOGGLE,
+   CMD_EVENT_BSV_RECORDING_TOGGLE,
+   CMD_EVENT_SHADER_NEXT,
+   CMD_EVENT_SHADER_PREV,
+   CMD_EVENT_CHEAT_INDEX_PLUS,
+   CMD_EVENT_CHEAT_INDEX_MINUS,
+   CMD_EVENT_CHEAT_TOGGLE,
+   CMD_EVENT_AI_SERVICE_CALL,
+   CMD_EVENT_SAVE_FILES
 };
 
-bool command_set_shader(const char *arg);
+typedef struct command command_t;
 
-bool command_network_send(const char *cmd_);
-
-bool command_network_new(
-      command_t *handle,
-      bool stdin_enable,
-      bool network_enable,
-      uint16_t port);
-
-command_t *command_new(void);
-
-bool command_poll(command_t *handle);
-
-bool command_get(command_handle_t *handle);
-
-bool command_set(command_handle_t *handle);
-
-bool command_free(command_t *handle);
+typedef struct command_handle
+{
+   command_t *handle;
+   unsigned id;
+} command_handle_t;
 
 /**
  * command_event:
@@ -266,23 +224,6 @@ bool command_free(command_t *handle);
  * Returns: true (1) on success, otherwise false (0).
  **/
 bool command_event(enum event_command action, void *data);
-
-void command_playlist_push_write(
-      void *data,
-      const char *path,
-      const char *label,
-      const char *core_path,
-      const char *core_name);
-
-void command_playlist_update_write(
-      void *data,
-      size_t idx,
-      const char *path,
-      const char *label,
-      const char *core_path,
-      const char *core_display_name,
-      const char *crc32,
-      const char *db_name);
 
 RETRO_END_DECLS
 

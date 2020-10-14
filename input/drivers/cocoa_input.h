@@ -20,6 +20,12 @@
 #include <stdint.h>
 #include <boolean.h>
 
+#ifdef HAVE_CONFIG_H
+#include "../../config.def.h"
+#endif
+
+#include "../input_driver.h"
+
 /* Input responder */
 #define MAX_TOUCHES  16
 
@@ -32,11 +38,10 @@ typedef struct
 
 typedef struct
 {
-   bool blocked;
-   cocoa_touch_data_t touches[MAX_TOUCHES];
    uint32_t touch_count;
 
    uint32_t mouse_buttons;
+   cocoa_touch_data_t touches[MAX_TOUCHES]; /* int16_t alignment */
    int16_t mouse_x_last;
    int16_t mouse_y_last;
    int16_t window_pos_x;
@@ -47,15 +52,6 @@ typedef struct
    int16_t mouse_wd;
    int16_t mouse_wl;
    int16_t mouse_wr;
-
-   const input_device_driver_t *sec_joypad;
-   const input_device_driver_t *joypad;
 } cocoa_input_data_t;
-
-extern int32_t cocoa_input_find_any_key(void);
-
-extern int32_t cocoa_input_find_any_button(uint32_t port);
-
-extern int32_t cocoa_input_find_any_axis(uint32_t port);
 
 #endif

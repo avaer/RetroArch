@@ -1,4 +1,4 @@
-/*  RetroArch - A frontend for libretro.
+﻿/*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2011-2017 - Daniel De Matteis
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
@@ -23,7 +23,15 @@
 #include "../msg_hash.h"
 #include "../configuration.h"
 
-int menu_hash_get_help_it_enum(enum msg_hash_enums msg, char *s, size_t len)
+#if defined(_MSC_VER) && !defined(_XBOX) && (_MSC_VER >= 1500 && _MSC_VER < 1900)
+#if (_MSC_VER >= 1700)
+/* https://support.microsoft.com/en-us/kb/980263 */
+#pragma execution_character_set("utf-8")
+#endif
+#pragma warning(disable:4566)
+#endif
+
+int msg_hash_get_help_it_enum(enum msg_hash_enums msg, char *s, size_t len)
 {
    settings_t      *settings = config_get_ptr();
 
@@ -98,7 +106,7 @@ int menu_hash_get_help_it_enum(enum msg_hash_enums msg, char *s, size_t len)
                " \n"
                "I files saranno comparati alle entrate del database.\n"
                "Se c'è un riscontro, sarà aggiunta un'entrata\n"
-               "alla collezione.\n"
+               "alla playlist.\n"
                " \n"
                "Puoi accedere facilmente a questo contenuto\n"
                "andando su '%s' ->\n"
@@ -114,7 +122,7 @@ int menu_hash_get_help_it_enum(enum msg_hash_enums msg, char *s, size_t len)
                msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SCAN_DIRECTORY),
                msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SCAN_FILE),
                msg_hash_to_str(MENU_ENUM_LABEL_VALUE_LOAD_CONTENT_LIST),
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CONTENT_COLLECTION_LIST)
+               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLISTS_TAB)
                   );
          break;
       case MENU_ENUM_LABEL_VALUE_EXTRACTING_PLEASE_WAIT:
@@ -200,74 +208,78 @@ int menu_hash_get_help_it_enum(enum msg_hash_enums msg, char *s, size_t len)
                );
          break;
       case MENU_ENUM_LABEL_VIDEO_DRIVER:
-         snprintf(s, len,
-               "Driver video attuale.");
+         {
+            const char *video_driver = settings->arrays.video_driver;
 
-         if (string_is_equal(settings->arrays.video_driver, "gl"))
-         {
             snprintf(s, len,
-                  "Diver video OpenGL. \n"
-                  " \n"
-                  "Questo driver permette ai libretro core GL di \n"
-                  "essere usati in aggiunta alle implementazioni \n"
-                  "renderizzate via software dei core.\n"
-                  " \n"
-                  "Le performance per il rendering software e \n"
-                  "le implementazioni del libretro core G dipende \n"
-                  "dalla tua scheda grafica \n"
-                  "sottostante driver GL).");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "sdl2"))
-         {
-            snprintf(s, len,
-                  "Driver video SDL 2.\n"
-                  " \n"
-                  "Questo è un driver video SDL 2 renderizzato \n"
-                  "via software.\n"
-                  " \n"
-                  "Le performance per le implementazioni dei core \n"
-                  "renderizzati via software dipende \n"
-                  "dall'implementazzione sulla tua piattaforma SDL.");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "sdl1"))
-         {
-            snprintf(s, len,
-                  "Driver video SDL.\n"
-                  " \n"
-                  "Questo è un driver video SDL 1.2 renderizzato \n"
-                  "via software.\n"
-                  " \n"
-                  "Le performance sono considerate quasi ottimali. \n"
-                  "Considera di usare questo soltanto come ultima scelta.");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "d3d"))
-         {
-            snprintf(s, len,
-                  "Driver video Direct3D. \n"
-                  " \n"
-                  "Le performance per i core renderizzati via \n"
-                  "software dipende dal driver D3D inerente \n"
-                  "alla tua scheda video).");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "exynos"))
-         {
-            snprintf(s, len,
-                  "Exynos-G2D Video Driver. \n"
-                  " \n"
-                  "Questo è un driver video Exynos a basso livello. \n"
-                  "Usa il blocco G2D nei SoC Samsung Exynos \n"
-                  "per operazioni blit. \n"
-                  " \n"
-                  "Le performance per i core renderizzati via software \n"
-                  "dovrebbero essere ottimali.");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "sunxi"))
-         {
-            snprintf(s, len,
-                  "Driver video Sunxi-G2D. \n"
-                  " \n"
-                  "Questo è un driver video Sunxi a basso livello. \n"
-                  "Usa il blocco G2D nei Soc Allwinner.");
+                  "Driver video attuale.");
+
+            if (string_is_equal(video_driver, "gl"))
+            {
+               snprintf(s, len,
+                     "Diver video OpenGL. \n"
+                     " \n"
+                     "Questo driver permette ai libretro core GL di \n"
+                     "essere usati in aggiunta alle implementazioni \n"
+                     "renderizzate via software dei core.\n"
+                     " \n"
+                     "Le performance per il rendering software e \n"
+                     "le implementazioni del libretro core G dipende \n"
+                     "dalla tua scheda grafica \n"
+                     "sottostante driver GL).");
+            }
+            else if (string_is_equal(video_driver, "sdl2"))
+            {
+               snprintf(s, len,
+                     "Driver video SDL 2.\n"
+                     " \n"
+                     "Questo è un driver video SDL 2 renderizzato \n"
+                     "via software.\n"
+                     " \n"
+                     "Le performance per le implementazioni dei core \n"
+                     "renderizzati via software dipende \n"
+                     "dall'implementazzione sulla tua piattaforma SDL.");
+            }
+            else if (string_is_equal(video_driver, "sdl1"))
+            {
+               snprintf(s, len,
+                     "Driver video SDL.\n"
+                     " \n"
+                     "Questo è un driver video SDL 1.2 renderizzato \n"
+                     "via software.\n"
+                     " \n"
+                     "Le performance sono considerate quasi ottimali. \n"
+                     "Considera di usare questo soltanto come ultima scelta.");
+            }
+            else if (string_is_equal(video_driver, "d3d"))
+            {
+               snprintf(s, len,
+                     "Driver video Direct3D. \n"
+                     " \n"
+                     "Le performance per i core renderizzati via \n"
+                     "software dipende dal driver D3D inerente \n"
+                     "alla tua scheda video).");
+            }
+            else if (string_is_equal(video_driver, "exynos"))
+            {
+               snprintf(s, len,
+                     "Exynos-G2D Video Driver. \n"
+                     " \n"
+                     "Questo è un driver video Exynos a basso livello. \n"
+                     "Usa il blocco G2D nei SoC Samsung Exynos \n"
+                     "per operazioni blit. \n"
+                     " \n"
+                     "Le performance per i core renderizzati via software \n"
+                     "dovrebbero essere ottimali.");
+            }
+            else if (string_is_equal(video_driver, "sunxi"))
+            {
+               snprintf(s, len,
+                     "Driver video Sunxi-G2D. \n"
+                     " \n"
+                     "Questo è un driver video Sunxi a basso livello. \n"
+                     "Usa il blocco G2D nei Soc Allwinner.");
+            }
          }
          break;
       case MENU_ENUM_LABEL_AUDIO_DSP_PLUGIN:
@@ -285,7 +297,7 @@ int menu_hash_get_help_it_enum(enum msg_hash_enums msg, char *s, size_t len)
                strlcpy(s,
                      "Implementazione SINC in modalità finestra.", len);
             else if (string_is_equal(lbl, msg_hash_to_str(MENU_ENUM_LABEL_AUDIO_RESAMPLER_DRIVER_CC)))
-               strlcpy(s, 
+               strlcpy(s,
                      "Implementazione coseno complesso.", len);
          }
          break;
@@ -879,14 +891,6 @@ int menu_hash_get_help_it_enum(enum msg_hash_enums msg, char *s, size_t len)
                "When slowmotion, content will slow\n"
                "down by factor.");
          break;
-      case MENU_ENUM_LABEL_INPUT_AXIS_THRESHOLD:
-         snprintf(s, len,
-               "Defines axis threshold.\n"
-               " \n"
-               "How far an axis must be tilted to result\n"
-               "in a button press.\n"
-               " Possible values are [0.0, 1.0].");
-         break;
       case MENU_ENUM_LABEL_INPUT_TURBO_PERIOD:
          snprintf(s, len,
                "Turbo period.\n"
@@ -995,7 +999,7 @@ int menu_hash_get_help_it_enum(enum msg_hash_enums msg, char *s, size_t len)
          snprintf(s, len,
                "Frame advance when content is paused.");
          break;
-      case MENU_ENUM_LABEL_MOVIE_RECORD_TOGGLE:
+      case MENU_ENUM_LABEL_BSV_RECORD_TOGGLE:
          snprintf(s, len,
                "Toggle between recording and not.");
          break;

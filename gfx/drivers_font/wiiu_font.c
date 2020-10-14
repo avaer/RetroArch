@@ -21,13 +21,13 @@
 #include <encodings/utf.h>
 #include <wiiu/gx2.h>
 
-#include "gfx/font_driver.h"
-#include "gfx/video_driver.h"
-#include "gfx/common/gx2_common.h"
-#include "system/memory.h"
-#include "wiiu/wiiu_dbg.h"
+#include "../font_driver.h"
+#include "../common/gx2_common.h"
+#include "../../wiiu/system/memory.h"
+#include "../../wiiu/wiiu_dbg.h"
 
-#include "verbosity.h"
+#include "../../configuration.h"
+#include "../../verbosity.h"
 
 typedef struct
 {
@@ -47,8 +47,9 @@ static void* wiiu_font_init_font(void* data, const char* font_path,
    if (!font)
       return NULL;
 
-   if (!font_renderer_create_default((const void**)&font->font_driver,
-                                     &font->font_data, font_path, font_size))
+   if (!font_renderer_create_default(
+            &font->font_driver,
+            &font->font_data, font_path, font_size))
    {
       RARCH_WARN("Couldn't initialize font renderer.\n");
       free(font);
@@ -85,7 +86,6 @@ static void* wiiu_font_init_font(void* data, const char* font_path,
    font->ubo_tex->height = font->texture.surface.height;
    GX2Invalidate(GX2_INVALIDATE_MODE_CPU_UNIFORM_BLOCK, font->ubo_tex,
                  sizeof(*font->ubo_tex));
-
 
    return font;
 }
@@ -144,17 +144,15 @@ static int wiiu_font_get_message_width(void* data, const char* msg,
 }
 
 static void wiiu_font_render_line(
-      video_frame_info_t *video_info,
+      wiiu_video_t *wiiu,
       wiiu_font_t* font, const char* msg, unsigned msg_len,
       float scale, const unsigned int color, float pos_x,
-      float pos_y, unsigned text_align)
+      float pos_y,
+      unsigned width, unsigned height, unsigned text_align)
 {
    unsigned i;
-   wiiu_video_t* wiiu = (wiiu_video_t*)video_info->userdata;
-   unsigned width   = video_info->width;
-   unsigned height  = video_info->height;
-   int x            = roundf(pos_x * width);
-   int y            = roundf((1.0 - pos_y) * height);
+   int x              = roundf(pos_x * width);
+   int y              = roundf((1.0 - pos_y) * height);
 
    if(  !wiiu ||
          wiiu->vertex_cache.current + (msg_len * 4) > wiiu->vertex_cache.size)
@@ -214,7 +212,6 @@ static void wiiu_font_render_line(
    if (!count)
       return;
 
-
    GX2Invalidate(GX2_INVALIDATE_MODE_CPU_ATTRIBUTE_BUFFER, wiiu->vertex_cache.v + wiiu->vertex_cache.current, count * sizeof(wiiu->vertex_cache.v));
 
    if(font->atlas->dirty)
@@ -228,7 +225,6 @@ static void wiiu_font_render_line(
       font->atlas->dirty = false;
    }
 
-
    GX2SetPixelTexture(&font->texture, sprite_shader.ps.samplerVars[0].location);
    GX2SetVertexUniformBlock(sprite_shader.vs.uniformBlocks[1].offset, sprite_shader.vs.uniformBlocks[1].size, font->ubo_tex);
 
@@ -240,55 +236,53 @@ static void wiiu_font_render_line(
 }
 
 static void wiiu_font_render_message(
-      video_frame_info_t *video_info,
+      wiiu_video_t *wiiu,
       wiiu_font_t* font, const char* msg, float scale,
       const unsigned int color, float pos_x, float pos_y,
-      unsigned text_align)
+      unsigned width, unsigned height, unsigned text_align)
 {
-   int lines = 0;
+   struct font_line_metrics *line_metrics = NULL;
+   int lines                              = 0;
    float line_height;
 
    if (!msg || !*msg)
       return;
 
-   /* If the font height is not supported just draw as usual */
-   if (!font->font_driver->get_line_height)
+   /* If font line metrics are not supported just draw as usual */
+   if (!font->font_driver->get_line_metrics ||
+       !font->font_driver->get_line_metrics(font->font_data, &line_metrics))
    {
-      wiiu_font_render_line(video_info, font, msg, strlen(msg),
-                           scale, color, pos_x, pos_y, text_align);
+      wiiu_font_render_line(wiiu, font, msg, strlen(msg),
+            scale, color, pos_x, pos_y,
+            width, height, text_align);
       return;
    }
 
-   line_height = scale / font->font_driver->get_line_height(font->font_data);
+   line_height = scale / line_metrics->height;
 
    for (;;)
    {
       const char* delim = strchr(msg, '\n');
+      unsigned msg_len  = delim ? 
+         (unsigned)(delim - msg) : strlen(msg);
 
       /* Draw the line */
-      if (delim)
-      {
-         unsigned msg_len = delim - msg;
-         wiiu_font_render_line(video_info, font, msg, msg_len,
-                              scale, color, pos_x, pos_y - (float)lines * line_height,
-                              text_align);
-         msg += msg_len + 1;
-         lines++;
-      }
-      else
-      {
-         unsigned msg_len = strlen(msg);
-         wiiu_font_render_line(video_info, font, msg, msg_len,
-                              scale, color, pos_x, pos_y - (float)lines * line_height,
-                              text_align);
+      wiiu_font_render_line(wiiu, font, msg, msg_len,
+            scale, color, pos_x, pos_y - (float)lines * line_height,
+            width, height, text_align);
+
+      if (!delim)
          break;
-      }
+
+      msg += msg_len + 1;
+      lines++;
    }
 }
 
 static void wiiu_font_render_msg(
-      video_frame_info_t *video_info,
-      void* data, const char* msg,
+      void *userdata,
+      void* data,
+      const char* msg,
       const struct font_params *params)
 {
    float x, y, scale, drop_mod, drop_alpha;
@@ -297,9 +291,16 @@ static void wiiu_font_render_msg(
    enum text_alignment text_align;
    unsigned color, color_dark, r, g, b,
             alpha, r_dark, g_dark, b_dark, alpha_dark;
+   wiiu_video_t              *wiiu  = (wiiu_video_t*)userdata;
    wiiu_font_t                *font = (wiiu_font_t*)data;
-   unsigned width                   = video_info->width;
-   unsigned height                  = video_info->height;
+   unsigned width                   = wiiu->vp.full_width;
+   unsigned height                  = wiiu->vp.full_height;
+   settings_t *settings             = config_get_ptr();
+   float video_msg_pos_x            = settings->floats.video_msg_pos_x;
+   float video_msg_pos_y            = settings->floats.video_msg_pos_y;
+   float video_msg_color_r          = settings->floats.video_msg_color_r;
+   float video_msg_color_g          = settings->floats.video_msg_color_g;
+   float video_msg_color_b          = settings->floats.video_msg_color_b;
 
    if (!font || !msg || !*msg)
       return;
@@ -323,14 +324,14 @@ static void wiiu_font_render_msg(
    }
    else
    {
-      x              = video_info->font_msg_pos_x;
-      y              = video_info->font_msg_pos_y;
+      x              = video_msg_pos_x;
+      y              = video_msg_pos_y;
       scale          = 1.0f;
       text_align     = TEXT_ALIGN_LEFT;
 
-      r              = (video_info->font_msg_color_r * 255);
-      g              = (video_info->font_msg_color_g * 255);
-      b              = (video_info->font_msg_color_b * 255);
+      r              = (video_msg_color_r * 255);
+      g              = (video_msg_color_g * 255);
+      b              = (video_msg_color_b * 255);
       alpha          = 255;
       color          = COLOR_RGBA(r, g, b, alpha);
 
@@ -353,13 +354,13 @@ static void wiiu_font_render_msg(
       alpha_dark     = alpha * drop_alpha;
       color_dark     = COLOR_RGBA(r_dark, g_dark, b_dark, alpha_dark);
 
-      wiiu_font_render_message(video_info, font, msg, scale, color_dark,
-                              x + scale * drop_x / width, y +
-                              scale * drop_y / height, text_align);
+      wiiu_font_render_message(wiiu, font, msg, scale, color_dark,
+            x + scale * drop_x / width, y +
+            scale * drop_y / height, width, height, text_align);
    }
 
-   wiiu_font_render_message(video_info, font, msg, scale,
-                           color, x, y, text_align);
+   wiiu_font_render_message(wiiu, font, msg, scale,
+         color, x, y, width, height, text_align);
 }
 
 static const struct font_glyph* wiiu_font_get_glyph(
@@ -376,11 +377,15 @@ static const struct font_glyph* wiiu_font_get_glyph(
    return font->font_driver->get_glyph((void*)font->font_driver, code);
 }
 
-static void wiiu_font_bind_block(void* data, void* userdata)
+static bool wiiu_font_get_line_metrics(void* data, struct font_line_metrics **metrics)
 {
-   (void)data;
-}
+   wiiu_font_t* font = (wiiu_font_t*)data;
 
+   if (!font || !font->font_driver || !font->font_data)
+      return -1;
+
+   return font->font_driver->get_line_metrics(font->font_data, metrics);
+}
 
 font_renderer_t wiiu_font =
 {
@@ -389,7 +394,8 @@ font_renderer_t wiiu_font =
    wiiu_font_render_msg,
    "wiiufont",
    wiiu_font_get_glyph,
-   wiiu_font_bind_block,
+   NULL,                   /* bind_block */
    NULL,                   /* flush */
    wiiu_font_get_message_width,
+   wiiu_font_get_line_metrics
 };

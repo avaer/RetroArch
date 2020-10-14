@@ -28,161 +28,27 @@
 #include <boolean.h>
 #include <libretro.h>
 
+#include "../../config.def.h"
+
 #include "../input_driver.h"
 
-#define MAX_PADS 4
-
-typedef struct xdk_input
-{
-   bool blocked;
-   const input_device_driver_t *joypad;
-} xdk_input_t;
-
-static void xdk_input_poll(void *data)
-{
-   xdk_input_t *xdk = (xdk_input_t*)data;
-
-   if (xdk && xdk->joypad)
-      xdk->joypad->poll();
-}
-
-static int16_t xdk_input_state(void *data,
-      rarch_joypad_info_t joypad_info,
-      const struct retro_keybind **binds,
-      unsigned port, unsigned device,
-      unsigned index, unsigned id)
-{
-   xdk_input_t *xdk           = (xdk_input_t*)data;
-
-   if (port >= MAX_PADS)
-      return 0;
-
-   switch (device)
-   {
-      case RETRO_DEVICE_JOYPAD:
-         return input_joypad_pressed(xdk->joypad, joypad_info, port, binds[port], id);
-      case RETRO_DEVICE_ANALOG:
-         if (binds[port])
-            return input_joypad_analog(xdk->joypad, joypad_info, port, index, id, binds[port]);
-         break;
-   }
-
-   return 0;
-}
-
-static void xdk_input_free_input(void *data)
-{
-   xdk_input_t *xdk = (xdk_input_t*)data;
-
-   if (!xdk)
-      return;
-
-   if (xdk->joypad)
-      xdk->joypad->destroy();
-
-   free(xdk);
-}
-
-static void *xdk_input_init(const char *joypad_driver)
-{
-   xdk_input_t *xdk     = (xdk_input_t*)calloc(1, sizeof(*xdk));
-   if (!xdk)
-      return NULL;
-
-   xdk->joypad = input_joypad_init_driver(joypad_driver, xdk);
-
-   return xdk;
-}
+static void xdk_input_free_input(void *data) { }
+static void *xdk_input_init(const char *a) { return (void*)-1; }
 
 static uint64_t xdk_input_get_capabilities(void *data)
 {
-   (void)data;
-
    return (1 << RETRO_DEVICE_JOYPAD) | (1 << RETRO_DEVICE_ANALOG);
-}
-
-/* FIXME - are we sure about treating low frequency motor as the
- * "strong" motor? Does it apply for Xbox too? */
-
-static bool xdk_input_set_rumble(void *data, unsigned port,
-      enum retro_rumble_effect effect, uint16_t strength)
-{
-#ifdef _XBOX360
-#if 0
-   XINPUT_VIBRATION rumble_state;
-#endif
-#endif
-   xdk_input_t *xdk = (xdk_input_t*)data;
-   bool val         = false;
-
-   (void)xdk;
-
-#if 0
-#if defined(_XBOX360)
-   if (effect == RETRO_RUMBLE_STRONG)
-      rumble_state.wLeftMotorSpeed = strength;
-   else if (effect == RETRO_RUMBLE_WEAK)
-      rumble_state.wRightMotorSpeed = strength;
-   val = XInputSetState(port, &rumble_state) == ERROR_SUCCESS;
-#elif defined(_XBOX1)
-#if 0
-   XINPUT_FEEDBACK rumble_state;
-
-   if (effect == RETRO_RUMBLE_STRONG)
-      rumble_state.Rumble.wLeftMotorSpeed = strength;
-   else if (effect == RETRO_RUMBLE_WEAK)
-      rumble_state.Rumble.wRightMotorSpeed = strength;
-   val = XInputSetState(xdk->gamepads[port], &rumble_state) == ERROR_SUCCESS;
-#endif
-#endif
-#endif
-   return val;
-}
-
-static const input_device_driver_t *xdk_input_get_joypad_driver(void *data)
-{
-   xdk_input_t *xdk = (xdk_input_t*)data;
-   if (!xdk)
-      return NULL;
-   return xdk->joypad;
-}
-
-static void xdk_input_grab_mouse(void *data, bool state)
-{
-   (void)data;
-   (void)state;
-}
-
-static bool xdk_keyboard_mapping_is_blocked(void *data)
-{
-   xdk_input_t *xdk = (xdk_input_t*)data;
-   if (!xdk)
-      return false;
-   return xdk->blocked;
-}
-
-static void xdk_keyboard_mapping_set_block(void *data, bool value)
-{
-   xdk_input_t *xdk = (xdk_input_t*)data;
-   if (!xdk)
-      return;
-   xdk->blocked = value;
 }
 
 input_driver_t input_xinput = {
    xdk_input_init,
-   xdk_input_poll,
-   xdk_input_state,
+   NULL,                         /* poll */
+   NULL,                         /* input_state */
    xdk_input_free_input,
    NULL,
    NULL,
    xdk_input_get_capabilities,
    "xinput",
-   xdk_input_grab_mouse,
-   NULL,
-   xdk_input_set_rumble,
-   xdk_input_get_joypad_driver,
-   NULL,
-   xdk_keyboard_mapping_is_blocked,
-   xdk_keyboard_mapping_set_block,
+   NULL,                         /* grab_mouse */
+   NULL
 };

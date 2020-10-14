@@ -5,6 +5,7 @@ DEBUG                   = 0
 BUILD_3DSX              = 1
 BUILD_3DS               = 0
 BUILD_CIA               = 1
+USE_CTRULIB_2           = 0
 
 APP_TITLE            = RetroArch 3DS
 APP_DESCRIPTION      = RetroArch 3DS
@@ -24,10 +25,11 @@ OBJ := ctr/ctr_system.o \
 		 frontend/frontend_salamander.o \
 		 frontend/frontend_driver.o \
 		 frontend/drivers/platform_ctr.o \
-		 frontend/drivers/platform_null.o \
 		 libretro-common/encodings/encoding_utf.o \
 		 libretro-common/compat/compat_strcasestr.o \
+		 libretro-common/compat/fopen_utf8.o \
 		 libretro-common/file/file_path.o \
+		 libretro-common/file/file_path_io.o \
 		 libretro-common/string/stdstring.o \
 		 libretro-common/lists/string_list.o \
 		 libretro-common/lists/dir_list.o \
@@ -37,18 +39,29 @@ OBJ := ctr/ctr_system.o \
 		 libretro-common/streams/file_stream.o \
 		 libretro-common/vfs/vfs_implementation.o \
 		 libretro-common/hash/rhash.o \
-		 file_path_str.o \
+		 libretro-common/time/rtime.o \
 		 verbosity.o
-		 
+
 OBJ += ctr/exec-3dsx/exec_cia.o \
 	ctr/exec-3dsx/exec_3dsx.o \
 	ctr/exec-3dsx/mini-hb-menu/launch.o \
 	ctr/exec-3dsx/mini-hb-menu/loaders/rosalina.o \
-	ctr/exec-3dsx/mini-hb-menu/loaders/hax2.o \
-	ctr/exec-3dsx/mini-hb-menu/loaders/ninjhax1.o
+	ctr/exec-3dsx/mini-hb-menu/loaders/hax2.o
 
 ifeq ($(strip $(DEVKITPRO)),)
 	$(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path to>devkitpro")
+endif
+
+ifeq ($(strip $(USE_CTRULIB_2)),1)
+	CFLAGS += -DUSE_CTRULIB_2
+endif
+
+ifeq ($(strip $(DEVKITTOOLS)),)
+	ifeq ($(strip $(USE_CTRULIB_2)),1)
+		DEVKITTOOLS = $(DEVKITPRO)/tools
+	else
+		DEVKITTOOLS = $(DEVKITARM)
+	endif
 endif
 
 ifeq ($(strip $(CTRULIB)),)
@@ -82,7 +95,7 @@ else
    CFLAGS	+= -O3
 endif
 
-CFLAGS += -I. -Ideps/libz -Ideps/7zip -Ideps/stb -Ilibretro-common/include
+CFLAGS += -I. -Ideps/7zip -Ideps/stb -Ilibretro-common/include -Ilibretro-common/include/compat/zlib
 
 #CFLAGS += -DRARCH_INTERNAL
 CFLAGS += -DRARCH_CONSOLE -DIS_SALAMANDER
@@ -94,9 +107,7 @@ LDFLAGS  +=	-specs=ctr/3dsx_custom.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 CFLAGS   += -std=gnu99 -ffast-math
 
-
 LIBS	:= -lctru -lm
-
 
 ifeq ($(BUILD_3DSX), 1)
 TARGET_3DSX := $(TARGET).3dsx $(TARGET).smdh
@@ -154,13 +165,13 @@ else
 endif
 
 %.o: %.vsh %.gsh
-	$(DEVKITARM)/bin/picasso $^ -o $*.shbin
-	$(DEVKITARM)/bin/bin2s $*.shbin | $(PREFIX)as -o $@
+	$(DEVKITTOOLS)/bin/picasso $^ -o $*.shbin
+	$(DEVKITTOOLS)/bin/bin2s $*.shbin | $(PREFIX)as -o $@
 	rm $*.shbin
 
 %.o: %.vsh
-	$(DEVKITARM)/bin/picasso $^ -o $*.shbin
-	$(DEVKITARM)/bin/bin2s $*.shbin | $(PREFIX)as -o $@
+	$(DEVKITTOOLS)/bin/picasso $^ -o $*.shbin
+	$(DEVKITTOOLS)/bin/bin2s $*.shbin | $(PREFIX)as -o $@
 	rm $*.shbin
 
 %.o: %.cpp
@@ -181,7 +192,7 @@ endif
 %.vsh:
 
 $(TARGET).smdh: $(APP_ICON)
-	$(DEVKITARM)/bin/smdhtool --create "$(APP_TITLE)" "$(APP_DESCRIPTION)" "$(APP_AUTHOR)" $(APP_ICON) $@
+	$(DEVKITTOOLS)/bin/smdhtool --create "$(APP_TITLE)" "$(APP_DESCRIPTION)" "$(APP_AUTHOR)" $(APP_ICON) $@
 
 $(TARGET).3dsx: $(TARGET).elf
 ifeq ($(APP_BIG_TEXT_SECTION), 1)
@@ -189,7 +200,7 @@ ifeq ($(APP_BIG_TEXT_SECTION), 1)
 else
 	rm -f $(TARGET).xml
 endif
-	$(DEVKITARM)/bin/3dsxtool $< $@ $(_3DSXFLAGS)
+	$(DEVKITTOOLS)/bin/3dsxtool $< $@ $(_3DSXFLAGS)
 
 $(TARGET).elf: ctr/3dsx_custom_crt0.o
 	$(LD) $(LDFLAGS) $(OBJ) $(LIBDIRS) $(LIBS) -o $@
@@ -220,5 +231,3 @@ clean:
 	rm -f ctr/3dsx_custom_crt0.o
 
 .PHONY: clean
-
-

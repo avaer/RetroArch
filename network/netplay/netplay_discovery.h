@@ -13,7 +13,6 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 #ifndef __RARCH_NETPLAY_DISCOVERY_H
 #define __RARCH_NETPLAY_DISCOVERY_H
 
@@ -36,7 +35,8 @@ struct netplay_host
 {
    struct sockaddr addr;
    socklen_t addrlen;
-
+   int  content_crc;
+   int  port;
    char address[NETPLAY_HOST_STR_LEN];
    char nick[NETPLAY_HOST_STR_LEN];
    char frontend[NETPLAY_HOST_STR_LEN];
@@ -44,8 +44,7 @@ struct netplay_host
    char core_version[NETPLAY_HOST_STR_LEN];
    char retroarch_version[NETPLAY_HOST_STR_LEN];
    char content[NETPLAY_HOST_LONGSTR_LEN];
-   int  content_crc;
-   int  port;
+   char subsystem_name[NETPLAY_HOST_LONGSTR_LEN];
 };
 
 struct netplay_host_list
@@ -54,6 +53,7 @@ struct netplay_host_list
    size_t size;
 };
 
+/* Keep these in order, they coincide with a server-side enum and must match. */
 enum netplay_host_method
 {
    NETPLAY_HOST_METHOD_UNKNOWN = 0,
@@ -64,25 +64,27 @@ enum netplay_host_method
 
 struct netplay_room
 {
-   char nickname    [PATH_MAX_LENGTH];
-   char address     [PATH_MAX_LENGTH];
-   char mitm_address[PATH_MAX_LENGTH];
+   struct netplay_room *next;
+   int id;
    int  port;
    int  mitm_port;
-   char corename    [PATH_MAX_LENGTH];
-   char frontend    [PATH_MAX_LENGTH];
-   char coreversion [PATH_MAX_LENGTH];
-   char gamename    [PATH_MAX_LENGTH];
    int  gamecrc;
    int  timestamp;
    int  host_method;
+   char country           [3];
+   char retroarch_version [33];
+   char nickname          [33];
+   char subsystem_name    [256];
+   char corename          [256];
+   char frontend          [256];
+   char coreversion       [256];
+   char gamename          [256];
+   char address           [256];
+   char mitm_address      [256];
    bool has_password;
    bool has_spectate_password;
    bool lan;
    bool fixed;
-   char retroarch_version[PATH_MAX_LENGTH];
-   char country[PATH_MAX_LENGTH];
-   struct netplay_room *next;
 };
 
 extern struct netplay_room *netplay_room_list;
@@ -97,5 +99,7 @@ void deinit_netplay_discovery(void);
 
 /** Discovery control */
 bool netplay_discovery_driver_ctl(enum rarch_netplay_discovery_ctl_state state, void *data);
+
+struct netplay_room* netplay_get_host_room(void);
 
 #endif

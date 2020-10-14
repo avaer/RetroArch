@@ -96,13 +96,17 @@ typedef enum VPADTouchPadValidity
    VPAD_INVALID_Y       = 0x2,
 } VPADTouchPadValidity;
 
-
 typedef enum VPADReadError
 {
    VPAD_READ_SUCCESS             = 0,
    VPAD_READ_NO_SAMPLES          = -1,
    VPAD_READ_INVALID_CONTROLLER  = -2,
 } VPADReadError;
+
+typedef enum VPADChan
+{
+   VPAD_CHAN_0 = 0,
+} VPADChan;
 
 typedef struct VPADVec2D
 {

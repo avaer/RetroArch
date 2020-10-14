@@ -29,7 +29,6 @@ int main(int argc, const char** argv)
          ps_out = argv[i + 1];
    }
 
-
    if(!slang || !vs_out || !ps_out || (!vs_asm && ps_asm) || (vs_asm && !ps_asm))
    {
       printf("Usage :\n");
@@ -63,11 +62,11 @@ int main(int argc, const char** argv)
    bool vson = true;
    bool pson = true;
 
-   while(*next)
+   while (*next)
    {
       const char* line = next;
 
-      while(*next && *next != '\n' && *next != '\r')
+      while (*next && *next != '\n' && *next != '\r')
          next++;
 
       if (*next == '\r')
@@ -75,8 +74,10 @@ int main(int argc, const char** argv)
 
       *next++ = '\0';
 
-//      while((*next == '\n') || (*next == '\r'))
-//         *next++ = '\0';
+#if 0
+      while ((*next == '\n') || (*next == '\r'))
+         *next++ = '\0';
+#endif
 
       if(strstr(line, "#version"))
          continue;
@@ -97,25 +98,20 @@ int main(int argc, const char** argv)
          continue;
       }
 
-
       char* layout = strstr(line, "layout(");
       if(layout)
       {
-         while(*layout != ')')
+         while (*layout != ')')
             layout++;
 
          layout++;
 
-         while(*layout && isspace(*layout))
+         while (*layout && isspace(*layout))
             layout++;
 
          if(!strncmp(layout, "uniform", 7))
             line = layout;
       }
-
-
-
-
 
       if(vson)
       {
@@ -138,5 +134,3 @@ int main(int argc, const char** argv)
 
    return 0;
 }
-
-

@@ -1,5 +1,6 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2014-2018 - Ali Bouhlel
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -158,7 +159,7 @@ static INLINE HRESULT D3D12ResetCommandAllocator(D3D12CommandAllocator command_a
 static INLINE ULONG  D3D12ReleaseFence(D3D12Fence fence) { return fence->lpVtbl->Release(fence); }
 static INLINE UINT64 D3D12GetCompletedValue(D3D12Fence fence)
 {
-   return fence->lpVtbl->GetCompletedValue(fence);
+   return fence && fence->lpVtbl->GetCompletedValue(fence);
 }
 static INLINE HRESULT D3D12SetEventOnCompletion(D3D12Fence fence, UINT64 value, HANDLE h_event)
 {
@@ -1001,6 +1002,7 @@ static INLINE void D3D12ClearStoredMessages(D3D12InfoQueue info_queue)
 {
    info_queue->lpVtbl->ClearStoredMessages(info_queue);
 }
+#ifndef __WINRT__
 static INLINE HRESULT D3D12GetMessageA(
       D3D12InfoQueue info_queue,
       UINT64         message_index,
@@ -1009,6 +1011,7 @@ static INLINE HRESULT D3D12GetMessageA(
 {
    return info_queue->lpVtbl->GetMessageA(info_queue, message_index, message, message_byte_length);
 }
+#endif
 static INLINE UINT64 D3D12GetNumMessagesAllowedByStorageFilter(D3D12InfoQueue info_queue)
 {
    return info_queue->lpVtbl->GetNumMessagesAllowedByStorageFilter(info_queue);
@@ -1258,8 +1261,10 @@ D3D12GetGPUDescriptorHandleForHeapStart(D3D12DescriptorHeap descriptor_heap)
 #include <gfx/math/matrix_4x4.h>
 
 #include "../common/d3dcompiler_common.h"
-#include "../video_driver.h"
+#include "../../retroarch.h"
 #include "../drivers_shader/slang_process.h"
+
+#define D3D12_MAX_GPU_COUNT 16
 
 typedef struct d3d12_vertex_t
 {
@@ -1335,15 +1340,19 @@ typedef struct ALIGN(16)
    float time;
 } d3d12_uniform_t;
 
-static_assert(
-      (!(sizeof(d3d12_uniform_t) & 0xF)), "sizeof(d3d12_uniform_t) must be a multiple of 16");
-
 typedef struct
 {
    unsigned    cur_mon_id;
+#ifdef __WINRT__
+   DXGIFactory2 factory;
+#else
    DXGIFactory factory;
+#endif
    DXGIAdapter adapter;
    D3D12Device device;
+
+   IDXGIAdapter1 *adapters[D3D12_MAX_GPU_COUNT];
+   struct string_list *gpu_list;
 
    struct
    {
@@ -1438,6 +1447,7 @@ typedef struct
       D3D12_RECT                      scissorRect;
       pass_semantics_t                semantics;
       uint32_t                        frame_count;
+      int32_t                         frame_direction;
       D3D12_GPU_DESCRIPTOR_HANDLE     textures;
       D3D12_GPU_DESCRIPTOR_HANDLE     samplers;
    } pass[GFX_MAX_SHADERS];
@@ -1499,7 +1509,7 @@ bool d3d12_init_pipeline(
       D3D12_GRAPHICS_PIPELINE_STATE_DESC* desc,
       D3D12PipelineState*                 out);
 
-bool d3d12_init_swapchain(d3d12_video_t* d3d12, int width, int height, HWND hwnd);
+bool d3d12_init_swapchain(d3d12_video_t* d3d12, int width, int height, void *corewindow);
 
 bool d3d12_init_queue(d3d12_video_t* d3d12);
 

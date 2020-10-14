@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2018 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (config_file.h).
@@ -19,7 +19,6 @@
  * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-
 
 #ifndef __LIBRETRO_SDK_CONFIG_FILE_H
 #define __LIBRETRO_SDK_CONFIG_FILE_H
@@ -57,13 +56,21 @@ struct config_file
    char *path;
    struct config_entry_list *entries;
    struct config_entry_list *tail;
-   unsigned include_depth;
-
+   struct config_entry_list *last;
    struct config_include_list *includes;
+   unsigned include_depth;
+   bool guaranteed_no_duplicates;
+   bool modified;
 };
 
-
 typedef struct config_file config_file_t;
+
+struct config_file_cb
+{
+   void (*config_file_new_entry_cb)(char*, char*);
+};
+
+typedef struct config_file_cb config_file_cb_t ;
 
 /* Config file format
  * - # are treated as comments. Rest of the line is ignored.
@@ -79,11 +86,28 @@ typedef struct config_file config_file_t;
  * NULL path will create an empty config file. */
 config_file_t *config_file_new(const char *path);
 
-/* Load a config file from a string. */
-config_file_t *config_file_new_from_string(const char *from_string);
+config_file_t *config_file_new_alloc(void);
+
+void config_file_initialize(struct config_file *conf);
+
+/* Loads a config file. Returns NULL if file doesn't exist.
+ * NULL path will create an empty config file.
+ * Includes cb callbacks to run custom code during config file processing.*/
+config_file_t *config_file_new_with_callback(const char *path, config_file_cb_t *cb);
+
+/* Load a config file from a string.
+ * > WARNING: This will modify 'from_string'.
+ *   Pass a copy of source string if original
+ *   contents must be preserved */
+config_file_t *config_file_new_from_string(char *from_string,
+      const char *path);
+
+config_file_t *config_file_new_from_path_to_string(const char *path);
 
 /* Frees config file. */
 void config_file_free(config_file_t *conf);
+
+bool config_file_deinitialize(config_file_t *conf);
 
 /* Loads a new config, and appends its data to conf.
  * The key-value pairs of the new config file takes priority over the old. */
@@ -94,7 +118,17 @@ bool config_append_file(config_file_t *conf, const char *path);
 
 bool config_entry_exists(config_file_t *conf, const char *entry);
 
-struct config_entry_list;
+struct config_entry_list
+{
+   char *key;
+   char *value;
+   struct config_entry_list *next;
+   /* If we got this from an #include,
+    * do not allow overwrite. */
+   bool readonly;
+};
+
+
 struct config_file_entry
 {
    const char *key;
@@ -102,6 +136,9 @@ struct config_file_entry
    /* Used intentionally. Opaque here. */
    const struct config_entry_list *next;
 };
+
+struct config_entry_list *config_get_entry(
+      const config_file_t *conf, const char *key);
 
 bool config_get_entry_list_head(config_file_t *conf, struct config_file_entry *entry);
 bool config_get_entry_list_next(struct config_file_entry *entry);
@@ -117,6 +154,9 @@ bool config_get_int(config_file_t *conf, const char *entry, int *in);
 
 /* Extracts an uint from config file. */
 bool config_get_uint(config_file_t *conf, const char *entry, unsigned *in);
+
+/* Extracts an size_t from config file. */
+bool config_get_size_t(config_file_t *conf, const char *key, size_t *in);
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__>=199901L
 /* Extracts an uint64 from config file. */
@@ -161,17 +201,21 @@ void config_set_string(config_file_t *conf, const char *entry, const char *val);
 void config_unset(config_file_t *conf, const char *key);
 void config_set_path(config_file_t *conf, const char *entry, const char *val);
 void config_set_bool(config_file_t *conf, const char *entry, bool val);
+void config_set_uint(config_file_t *conf, const char *key, unsigned int val);
 
 /* Write the current config to a file. */
-bool config_file_write(config_file_t *conf, const char *path);
+bool config_file_write(config_file_t *conf, const char *path, bool val);
 
 /* Dump the current config to an already opened file.
  * Does not close the file. */
-void config_file_dump(config_file_t *conf, FILE *file);
+void config_file_dump(config_file_t *conf, FILE *file, bool val);
+
+#ifdef ORBIS
+void config_file_dump_orbis(config_file_t *conf, int fd);
+#endif
 
 bool config_file_exists(const char *path);
 
 RETRO_END_DECLS
 
 #endif
-

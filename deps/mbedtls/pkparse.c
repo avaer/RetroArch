@@ -52,19 +52,10 @@
 #include "mbedtls/pkcs12.h"
 #endif
 
-#if defined(MBEDTLS_PLATFORM_C)
-#include "mbedtls/platform.h"
-#else
 #include <stdlib.h>
-#define mbedtls_calloc    calloc
-#define mbedtls_free       free
-#endif
 
 #if defined(MBEDTLS_FS_IO)
-/* Implementation that should never be optimized out by the compiler */
-static void mbedtls_zeroize( void *v, size_t n ) {
-    volatile unsigned char *p = v; while( n-- ) *p++ = 0;
-}
+#include "arc4_alt.h"
 
 /*
  * Load all data from a file into a given buffer.
@@ -92,7 +83,7 @@ int mbedtls_pk_load_file( const char *path, unsigned char **buf, size_t *n )
     *n = (size_t) size;
 
     if( *n + 1 == 0 ||
-        ( *buf = mbedtls_calloc( 1, *n + 1 ) ) == NULL )
+        ( *buf = (unsigned char*)calloc( 1, *n + 1 ) ) == NULL )
     {
         fclose( f );
         return( MBEDTLS_ERR_PK_ALLOC_FAILED );
@@ -101,7 +92,7 @@ int mbedtls_pk_load_file( const char *path, unsigned char **buf, size_t *n )
     if( fread( *buf, 1, *n, f ) != *n )
     {
         fclose( f );
-        mbedtls_free( *buf );
+        free( *buf );
         return( MBEDTLS_ERR_PK_FILE_IO_ERROR );
     }
 
@@ -135,7 +126,7 @@ int mbedtls_pk_parse_keyfile( mbedtls_pk_context *ctx,
                 (const unsigned char *) pwd, strlen( pwd ) );
 
     mbedtls_zeroize( buf, n );
-    mbedtls_free( buf );
+    free( buf );
 
     return( ret );
 }
@@ -155,7 +146,7 @@ int mbedtls_pk_parse_public_keyfile( mbedtls_pk_context *ctx, const char *path )
     ret = mbedtls_pk_parse_public_key( ctx, buf, n );
 
     mbedtls_zeroize( buf, n );
-    mbedtls_free( buf );
+    free( buf );
 
     return( ret );
 }
@@ -1016,9 +1007,9 @@ static int pk_parse_key_pkcs8_encrypted_der(
             return( ret );
         }
 
-        // Best guess for password mismatch when using RC4. If first tag is
-        // not MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE
-        //
+        /* Best guess for password mismatch when using RC4. If first tag is
+         * not MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE
+         */
         if( *buf != ( MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE ) )
             return( MBEDTLS_ERR_PK_PASSWORD_MISMATCH );
 

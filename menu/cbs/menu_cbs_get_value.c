@@ -17,61 +17,65 @@
 #include <compat/strl.h>
 #include <string/stdstring.h>
 #include <lists/string_list.h>
-#include <audio/audio_resampler.h>
 
 #ifdef HAVE_CONFIG_H
 #include "../../config.h"
 #endif
 
 #include "../menu_driver.h"
-#include "../menu_animation.h"
+#include "../../gfx/gfx_animation.h"
 #include "../menu_cbs.h"
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
 #include "../menu_shader.h"
+#endif
 
 #include "../../tasks/tasks_internal.h"
-#include "../../input/input_driver.h"
 
-#include "../../audio/audio_driver.h"
 #include "../../core.h"
 #include "../../core_info.h"
 #include "../../configuration.h"
 #include "../../file_path_special.h"
-#include "../../input/input_driver.h"
 #include "../../managers/core_option_manager.h"
+#ifdef HAVE_CHEATS
 #include "../../managers/cheat_manager.h"
+#endif
 #include "../../performance_counters.h"
 #include "../../paths.h"
-#include "../../retroarch.h"
 #include "../../verbosity.h"
+#include "../../bluetooth/bluetooth_driver.h"
 #include "../../wifi/wifi_driver.h"
+#include "../../playlist.h"
+#include "../../manual_content_scan.h"
 
 #ifdef HAVE_NETWORKING
-#include "../network/netplay/netplay.h"
+#include "../../network/netplay/netplay.h"
+#endif
+
+#ifdef HAVE_CHEEVOS
+#include "../../cheevos/cheevos.h"
 #endif
 
 #ifndef BIND_ACTION_GET_VALUE
-#define BIND_ACTION_GET_VALUE(cbs, name) \
-   cbs->action_get_value = name; \
-   cbs->action_get_value_ident = #name;
+#define BIND_ACTION_GET_VALUE(cbs, name) (cbs)->action_get_value = (name)
 #endif
 
 extern struct key_desc key_descriptors[RARCH_MAX_KEYS];
 
+#ifdef HAVE_AUDIOMIXER
 static void menu_action_setting_audio_mixer_stream_name(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   unsigned         offset      = (type - MENU_SETTINGS_AUDIO_MIXER_STREAM_BEGIN);
+   unsigned offset      = (type - MENU_SETTINGS_AUDIO_MIXER_STREAM_BEGIN);
+   *w                   = 19;
 
-   *w = 19;
    strlcpy(s2, path, len2);
 
-   if (offset >= AUDIO_MIXER_MAX_STREAMS)
+   if (offset >= AUDIO_MIXER_MAX_SYSTEM_STREAMS)
       return;
 
    strlcpy(s, audio_driver_mixer_get_stream_name(offset), len);
@@ -82,7 +86,6 @@ static void menu_action_setting_audio_mixer_stream_volume(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -91,18 +94,19 @@ static void menu_action_setting_audio_mixer_stream_volume(
    *w = 19;
    strlcpy(s2, path, len2);
 
-   if (offset >= AUDIO_MIXER_MAX_STREAMS)
+   if (offset >= AUDIO_MIXER_MAX_SYSTEM_STREAMS)
       return;
 
    snprintf(s, len, "%.2f dB", audio_driver_mixer_get_stream_volume(offset));
 }
+#endif
 
+#ifdef HAVE_CHEATS
 static void menu_action_setting_disp_set_label_cheat_num_passes(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -110,58 +114,29 @@ static void menu_action_setting_disp_set_label_cheat_num_passes(
    strlcpy(s2, path, len2);
    snprintf(s, len, "%u", cheat_manager_get_buf_size());
 }
+#endif
 
-static void menu_action_setting_disp_set_label_cheevos_locked_entry(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
+#ifdef HAVE_CHEEVOS
+static void menu_action_setting_disp_set_label_cheevos_entry(
+   file_list_t* list,
+   unsigned *w, unsigned type, unsigned i,
+   const char *label,
+   char *s, size_t len,
+   const char *path,
+   char *s2, size_t len2)
 {
    *w = 19;
    strlcpy(s2, path, len2);
-   strlcpy(s,
-         msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CHEEVOS_LOCKED_ENTRY), len);
-}
 
-static void menu_action_setting_disp_set_label_cheevos_unlocked_entry(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   *w = 19;
-   strlcpy(s2, path, len2);
-   strlcpy(s,
-         msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CHEEVOS_UNLOCKED_ENTRY), len);
+   rcheevos_get_achievement_state(type - MENU_SETTINGS_CHEEVOS_START, s, len);
 }
-
-static void menu_action_setting_disp_set_label_cheevos_unlocked_entry_hardcore(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   *w = 19;
-   strlcpy(s2, path, len2);
-   strlcpy(s,
-         msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CHEEVOS_UNLOCKED_ENTRY_HARDCORE), len);
-}
+#endif
 
 static void menu_action_setting_disp_set_label_remap_file_load(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -179,7 +154,6 @@ static void menu_action_setting_disp_set_label_configurations(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -193,12 +167,12 @@ static void menu_action_setting_disp_set_label_configurations(
       strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_DIRECTORY_DEFAULT), len);
 }
 
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
 static void menu_action_setting_disp_set_label_shader_filter_pass(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -229,182 +203,26 @@ static void menu_action_setting_disp_set_label_shader_filter_pass(
   }
 }
 
-static void menu_action_setting_disp_set_label_audio_resampler_quality(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings = config_get_ptr();
-   *s = '\0';
-   *w = 19;
-   strlcpy(s2, path, len2);
-
-   if (settings)
-   {
-      switch (settings->uints.audio_resampler_quality)
-      {
-         case RESAMPLER_QUALITY_DONTCARE:
-            strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_DONT_CARE),
-                  len);
-            break;
-         case RESAMPLER_QUALITY_LOWEST:
-            strlcpy(s, "Lowest",
-                  len);
-            break;
-         case RESAMPLER_QUALITY_LOWER:
-            strlcpy(s, "Lower",
-                  len);
-            break;
-         case RESAMPLER_QUALITY_HIGHER:
-            strlcpy(s, "Higher",
-                  len);
-            break;
-         case RESAMPLER_QUALITY_HIGHEST:
-            strlcpy(s, "Highest",
-                  len);
-            break;
-         case RESAMPLER_QUALITY_NORMAL:
-            strlcpy(s, "Normal",
-                  len);
-            break;
-      }
-   }
-}
-
-static void menu_action_setting_disp_set_label_filter(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings = config_get_ptr();
-
-   *s = '\0';
-   *w = 19;
-   strlcpy(s2, path, len2);
-   strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NOT_AVAILABLE), len);
-
-   if (settings && *settings->paths.path_softfilter_plugin)
-      fill_short_pathname_representation(s,
-            settings->paths.path_softfilter_plugin, len);
-}
-
-static void menu_action_setting_disp_set_label_pipeline(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings = config_get_ptr();
-
-   *s = '\0';
-   *w = 19;
-
-   switch (settings->uints.menu_xmb_shader_pipeline)
-   {
-      case XMB_SHADER_PIPELINE_WALLPAPER:
-         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_OFF), len);
-         break;
-      case XMB_SHADER_PIPELINE_SIMPLE_RIBBON:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_SHADER_PIPELINE_RIBBON_SIMPLIFIED), len);
-         break;
-      case XMB_SHADER_PIPELINE_RIBBON:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_SHADER_PIPELINE_RIBBON), len);
-         break;
-      case XMB_SHADER_PIPELINE_SIMPLE_SNOW:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_SHADER_PIPELINE_SIMPLE_SNOW), len);
-         break;
-      case XMB_SHADER_PIPELINE_SNOW:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_SHADER_PIPELINE_SNOW), len);
-         break;
-      case XMB_SHADER_PIPELINE_BOKEH:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_SHADER_PIPELINE_BOKEH), len);
-         break;
-      case XMB_SHADER_PIPELINE_SNOWFLAKE:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_SHADER_PIPELINE_SNOWFLAKE), len);
-         break;
-   }
-
-   strlcpy(s2, path, len2);
-
-}
-
-#ifdef HAVE_NETWORKING
-static void menu_action_setting_disp_set_label_netplay_mitm_server(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   unsigned j;
-   settings_t *settings = config_get_ptr();
-
-   *s = '\0';
-   *w = 19;
-   strlcpy(s2, path, len2);
-
-   if (!settings)
-      return;
-
-   if (string_is_empty(settings->arrays.netplay_mitm_server))
-      return;
-
-   for (j = 0; j < ARRAY_SIZE(netplay_mitm_server_list); j++)
-   {
-      if (string_is_equal(settings->arrays.netplay_mitm_server,
-               netplay_mitm_server_list[j].name))
-         strlcpy(s, netplay_mitm_server_list[j].description, len);
-   }
-}
-#endif
-
 static void menu_action_setting_disp_set_label_shader_watch_for_changes(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   settings_t *settings = config_get_ptr();
+   menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   bool val                  = *cbs->setting->value.target.boolean;
 
    *s = '\0';
    *w = 19;
    strlcpy(s2, path, len2);
 
-   if (settings)
-   {
-      if (settings->bools.video_shader_watch_files)
-         snprintf(s, len, "%s", msg_hash_to_str(MENU_ENUM_LABEL_VALUE_TRUE));
-      else
-         snprintf(s, len, "%s", msg_hash_to_str(MENU_ENUM_LABEL_VALUE_FALSE));
-   }
+   if (val)
+      strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_TRUE), len);
+   else
+      strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_FALSE), len);
 }
 
 static void menu_action_setting_disp_set_label_shader_num_passes(
@@ -412,7 +230,6 @@ static void menu_action_setting_disp_set_label_shader_num_passes(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -430,7 +247,6 @@ static void menu_action_setting_disp_set_label_shader_pass(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -450,37 +266,34 @@ static void menu_action_setting_disp_set_label_shader_pass(
 }
 
 static void menu_action_setting_disp_set_label_shader_default_filter(
-
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   settings_t *settings = config_get_ptr();
+   menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   bool val                  = *cbs->setting->value.target.boolean;
 
    *s = '\0';
    *w = 19;
 
-   if (!settings)
-      return;
-
-   if (settings->bools.video_smooth)
+   if (val)
       strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_LINEAR), len);
    else
       strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NEAREST), len);
 }
 
-static void menu_action_setting_disp_set_label_shader_parameter(
+static void menu_action_setting_disp_set_label_shader_parameter_internal(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
-      char *s2, size_t len2)
+      char *s2, size_t len2,
+      unsigned offset)
 {
    video_shader_ctx_t shader_info;
    const struct video_shader_parameter *param = NULL;
@@ -494,8 +307,7 @@ static void menu_action_setting_disp_set_label_shader_parameter(
    if (!shader_info.data)
       return;
 
-   param = &shader_info.data->parameters[type -
-      MENU_SETTINGS_SHADER_PARAMETER_0];
+   param = &shader_info.data->parameters[type - offset];
 
    if (!param)
       return;
@@ -504,27 +316,32 @@ static void menu_action_setting_disp_set_label_shader_parameter(
          param->current, param->minimum, param->maximum);
 }
 
+static void menu_action_setting_disp_set_label_shader_parameter(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   menu_action_setting_disp_set_label_shader_parameter_internal(
+         list, w, type, i,
+         label, s, len, path, s2, len2,
+         MENU_SETTINGS_SHADER_PARAMETER_0);
+}
+
 static void menu_action_setting_disp_set_label_shader_preset_parameter(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   struct video_shader *shader          = menu_shader_get();
-   struct video_shader_parameter *param = shader ?
-      &shader->parameters[type - MENU_SETTINGS_SHADER_PRESET_PARAMETER_0]
-      : NULL;
-
-   *s = '\0';
-   *w = 19;
-   strlcpy(s2, path, len2);
-
-   if (param)
-      snprintf(s, len, "%.2f [%.2f %.2f]",
-            param->current, param->minimum, param->maximum);
+   menu_action_setting_disp_set_label_shader_parameter_internal(
+         list, w, type, i,
+         label, s, len, path, s2, len2,
+         MENU_SETTINGS_SHADER_PRESET_PARAMETER_0);
 }
 
 static void menu_action_setting_disp_set_label_shader_scale_pass(
@@ -532,11 +349,9 @@ static void menu_action_setting_disp_set_label_shader_scale_pass(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   unsigned pass                         = 0;
    unsigned scale_value                  = 0;
    struct video_shader *shader           = menu_shader_get();
    struct video_shader_pass *shader_pass = shader ? &shader->pass[type - MENU_SETTINGS_SHADER_PASS_SCALE_0] : NULL;
@@ -544,9 +359,6 @@ static void menu_action_setting_disp_set_label_shader_scale_pass(
    *s = '\0';
    *w = 19;
    strlcpy(s2, path, len2);
-
-   (void)pass;
-   (void)scale_value;
 
    if (!shader_pass)
       return;
@@ -558,18 +370,49 @@ static void menu_action_setting_disp_set_label_shader_scale_pass(
    else
       snprintf(s, len, "%ux", scale_value);
 }
+#endif
+
+
+#ifdef HAVE_NETWORKING
+static void menu_action_setting_disp_set_label_netplay_mitm_server(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   unsigned j;
+   menu_file_list_cbs_t       *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   const char *netplay_mitm_server = cbs->setting->value.target.string;
+
+   *s = '\0';
+   *w = 19;
+   strlcpy(s2, path, len2);
+
+   if (string_is_empty(netplay_mitm_server))
+      return;
+
+   for (j = 0; j < ARRAY_SIZE(netplay_mitm_server_list); j++)
+   {
+      if (string_is_equal(netplay_mitm_server,
+               netplay_mitm_server_list[j].name))
+         strlcpy(s, netplay_mitm_server_list[j].description, len);
+   }
+}
+#endif
 
 static void menu_action_setting_disp_set_label_menu_file_core(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
    const char *alt = NULL;
-   strlcpy(s, "(CORE)", len);
+   strcpy_literal(s, "(CORE)");
 
    menu_entries_get_at_offset(list, i, NULL,
          NULL, NULL, NULL, &alt);
@@ -579,54 +422,166 @@ static void menu_action_setting_disp_set_label_menu_file_core(
       strlcpy(s2, alt, len2);
 }
 
+#ifdef HAVE_NETWORKING
+static void menu_action_setting_disp_set_label_core_updater_entry(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   core_updater_list_t *core_list         = core_updater_list_get_cached();
+   const core_updater_list_entry_t *entry = NULL;
+   const char *alt                        = NULL;
+
+   *s = '\0';
+   *w = 0;
+
+   menu_entries_get_at_offset(list, i, NULL,
+         NULL, NULL, NULL, &alt);
+
+   if (alt)
+      strlcpy(s2, alt, len2);
+
+   /* Search for specified core */
+   if (core_list &&
+       core_updater_list_get_filename(core_list, path, &entry) &&
+       !string_is_empty(entry->local_core_path))
+   {
+      core_info_ctx_find_t core_info;
+
+      /* Check whether core is installed
+       * > Note: We search core_info here instead
+       *   of calling path_is_valid() since we don't
+       *   want to perform disk access every frame */
+      core_info.inf  = NULL;
+      core_info.path = entry->local_core_path;
+
+      if (core_info_find(&core_info))
+      {
+         /* Highlight locked cores */
+         if (core_info.inf->is_locked)
+         {
+            strcpy_literal(s, "[#!]");
+            *w = (unsigned)STRLEN_CONST("[#!]");
+         }
+         else
+         {
+            strcpy_literal(s, "[#]");
+            *w = (unsigned)STRLEN_CONST("[#]");
+         }
+      }
+   }
+}
+#endif
+
+static void menu_action_setting_disp_set_label_core_manager_entry(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   const char *alt = NULL;
+   core_info_ctx_find_t core_info;
+
+   *s = '\0';
+   *w = 0;
+
+   menu_entries_get_at_offset(list, i, NULL,
+         NULL, NULL, NULL, &alt);
+
+   if (alt)
+      strlcpy(s2, alt, len2);
+
+   /* Check whether core is locked
+    * > Note: We search core_info here instead of
+    *   calling core_info_get_core_lock() since we
+    *   don't want to perform disk access every frame */
+   core_info.inf  = NULL;
+   core_info.path = path;
+
+   if (core_info_find(&core_info) &&
+       core_info.inf->is_locked)
+   {
+      strcpy_literal(s, "[!]");
+      *w = (unsigned)STRLEN_CONST("[!]");
+   }
+}
+
+static void menu_action_setting_disp_set_label_core_lock(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   const char *alt = NULL;
+   core_info_ctx_find_t core_info;
+
+   *s = '\0';
+   *w = 0;
+
+   menu_entries_get_at_offset(list, i, NULL,
+         NULL, NULL, NULL, &alt);
+
+   if (alt)
+      strlcpy(s2, alt, len2);
+
+   /* Check whether core is locked
+    * > Note: We search core_info here instead of
+    *   calling core_info_get_core_lock() since we
+    *   don't want to perform disk access every frame */
+   core_info.inf  = NULL;
+   core_info.path = path;
+
+   if (core_info_find(&core_info) &&
+       core_info.inf->is_locked)
+      strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_ON), len);
+   else
+      strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_OFF), len);
+
+   *w  = (unsigned)strlen(s);
+}
+
 static void menu_action_setting_disp_set_label_input_desc(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   rarch_system_info_t *system           = runloop_get_system_info();
+   unsigned remap_idx;
    settings_t *settings                  = config_get_ptr();
    const char* descriptor                = NULL;
-   char buf[256];
-
-   unsigned btn_idx, user_idx, remap_idx;
+   unsigned user_idx                     = (type - MENU_SETTINGS_INPUT_DESC_BEGIN) / (RARCH_FIRST_CUSTOM_BIND + 8);
+   unsigned btn_idx                      = (type - MENU_SETTINGS_INPUT_DESC_BEGIN) - (RARCH_FIRST_CUSTOM_BIND + 8) * user_idx;
 
    if (!settings)
       return;
 
-   user_idx = (type - MENU_SETTINGS_INPUT_DESC_BEGIN) / (RARCH_FIRST_CUSTOM_BIND + 8);
-   btn_idx  = (type - MENU_SETTINGS_INPUT_DESC_BEGIN) - (RARCH_FIRST_CUSTOM_BIND + 8) * user_idx;
-
    remap_idx =
       settings->uints.input_remap_ids[user_idx][btn_idx];
-/*
-   if (remap_idx == RARCH_UNMAPPED)
-      settings->uints.input_remap_ids[user_idx][btn_idx] = RARCH_UNMAPPED;
-*/
-   if (!system)
-      return;
 
-   descriptor = system->input_desc_btn[user_idx][remap_idx];
+   if (remap_idx != RARCH_UNMAPPED)
+      descriptor = 
+         runloop_get_system_info()->input_desc_btn[user_idx][remap_idx];
 
-   if (!string_is_empty(descriptor) && remap_idx < RARCH_FIRST_CUSTOM_BIND)
-      strlcpy(s, descriptor, len);
-   else if (!string_is_empty(descriptor) && remap_idx >= RARCH_FIRST_CUSTOM_BIND && remap_idx % 2 == 0)
+   strcpy_literal(s, "---");
+
+   if (!string_is_empty(descriptor))
    {
-      snprintf(buf, sizeof(buf), "%s %c", descriptor, '+');
-      strlcpy(s, buf, len);
+      if (remap_idx < RARCH_FIRST_CUSTOM_BIND)
+         strlcpy(s, descriptor, len);
+      else if (!string_is_empty(descriptor) && remap_idx >= RARCH_FIRST_CUSTOM_BIND && remap_idx % 2 == 0)
+         snprintf(s, len, "%s %c", descriptor, '+');
+      else if (remap_idx >= RARCH_FIRST_CUSTOM_BIND && remap_idx % 2 != 0)
+         snprintf(s, len, "%s %c", descriptor, '-');
    }
-   else if (!string_is_empty(descriptor) && remap_idx >= RARCH_FIRST_CUSTOM_BIND && remap_idx % 2 != 0)
-   {
-      snprintf(buf, sizeof(buf), "%s %c", descriptor, '-');
-      strlcpy(s, buf, len);
-   }
-   else
-      strlcpy(s, "---", len);
-
 
    *w = 19;
    strlcpy(s2, path, len2);
@@ -637,7 +592,6 @@ static void menu_action_setting_disp_set_label_input_desc_kbd(
    unsigned *w, unsigned type, unsigned i,
    const char *label,
    char *s, size_t len,
-   const char *entry_label,
    const char *path,
    char *s2, size_t len2)
 {
@@ -653,13 +607,12 @@ static void menu_action_setting_disp_set_label_input_desc_kbd(
 
    user_idx = (type - MENU_SETTINGS_INPUT_DESC_KBD_BEGIN) / RARCH_FIRST_CUSTOM_BIND;
    btn_idx  = (type - MENU_SETTINGS_INPUT_DESC_KBD_BEGIN) - RARCH_FIRST_CUSTOM_BIND * user_idx;
-
    remap_id =
       settings->uints.input_keymapper_ids[user_idx][btn_idx];
 
    for (key_id = 0; key_id < RARCH_MAX_KEYS - 1; key_id++)
    {
-      if(remap_id == key_descriptors[key_id].key)
+      if (remap_id == key_descriptors[key_id].key)
          break;
    }
 
@@ -669,35 +622,65 @@ static void menu_action_setting_disp_set_label_input_desc_kbd(
       strlcpy(s, desc, len);
    }
    else
-      strlcpy(s, "---", len);
+      strcpy_literal(s, "---");
 
    *w = 19;
    strlcpy(s2, path, len2);
 }
 
+#ifdef HAVE_CHEATS
 static void menu_action_setting_disp_set_label_cheat(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
    unsigned cheat_index = type - MENU_SETTINGS_CHEAT_BEGIN;
 
    if (cheat_index < cheat_manager_get_buf_size())
-      snprintf(s, len, "%s : (%s)",
-            (cheat_manager_get_code(cheat_index) != NULL)
-            ? cheat_manager_get_code(cheat_index) :
-            msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NOT_AVAILABLE),
-            cheat_manager_get_code_state(cheat_index) ?
-            msg_hash_to_str(MENU_ENUM_LABEL_VALUE_ON) :
-            msg_hash_to_str(MENU_ENUM_LABEL_VALUE_OFF)
-            );
+   {
+      if (cheat_manager_state.cheats[cheat_index].handler == CHEAT_HANDLER_TYPE_EMU)
+         snprintf(s, len, "(%s) : %s",
+               cheat_manager_get_code_state(cheat_index) ?
+               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_ON) :
+               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_OFF),
+               cheat_manager_get_code(cheat_index)
+               ? cheat_manager_get_code(cheat_index) :
+               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NOT_AVAILABLE)
+               );
+      else
+         snprintf(s, len, "(%s) : %08X",
+               cheat_manager_get_code_state(cheat_index) ?
+               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_ON) :
+               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_OFF),
+               cheat_manager_state.cheats[cheat_index].address
+               );
+   }
    *w = 19;
    strlcpy(s2, path, len2);
 }
+
+static void menu_action_setting_disp_set_label_cheat_match(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   unsigned int address      = 0;
+   unsigned int address_mask = 0;
+   unsigned int prev_val     = 0;
+   unsigned int curr_val     = 0;
+   cheat_manager_match_action(CHEAT_MATCH_ACTION_TYPE_VIEW, cheat_manager_state.match_idx, &address, &address_mask, &prev_val, &curr_val);
+
+   snprintf(s, len, "Prev: %u Curr: %u", prev_val, curr_val);
+   *w = 19;
+   strlcpy(s2, path, len2);
+}
+#endif
 
 static void menu_action_setting_disp_set_label_perf_counters_common(
       struct retro_perf_counter **counters,
@@ -730,7 +713,7 @@ static void general_disp_set_label_perf_counters(
 
    menu_action_setting_disp_set_label_perf_counters_common(
          counters, offset, s, len);
-   menu_animation_ctl(MENU_ANIMATION_CTL_SET_ACTIVE, NULL);
+   gfx_animation_ctl(MENU_ANIMATION_CTL_SET_ACTIVE, NULL);
 }
 
 static void menu_action_setting_disp_set_label_perf_counters(
@@ -738,7 +721,6 @@ static void menu_action_setting_disp_set_label_perf_counters(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -753,7 +735,6 @@ static void menu_action_setting_disp_set_label_libretro_perf_counters(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -768,7 +749,6 @@ static void menu_action_setting_disp_set_label_menu_more(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -783,7 +763,6 @@ static void menu_action_setting_disp_set_label_db_entry(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -798,14 +777,14 @@ static void menu_action_setting_disp_set_label_entry_url(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   const char *representation_label = NULL;
+   const char *representation_label = list->list[i].alt
+      ? list->list[i].alt
+      : list->list[i].path;
    *s = '\0';
    *w = 8;
-   file_list_get_alt_at_offset(list, i, &representation_label);
 
    if (!string_is_empty(representation_label))
       strlcpy(s2, representation_label, len2);
@@ -818,7 +797,6 @@ static void menu_action_setting_disp_set_label_entry(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -827,122 +805,19 @@ static void menu_action_setting_disp_set_label_entry(
    strlcpy(s2, path, len2);
 }
 
-static void menu_action_setting_disp_set_label_state(
+static void menu_action_setting_disp_set_label_bluetooth_is_connected(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   settings_t *settings        = config_get_ptr();
-
-   if (!settings)
-      return;
-
-   strlcpy(s2, path, len2);
-   *w = 16;
-   snprintf(s, len, "%d", settings->ints.state_slot);
-   if (settings->ints.state_slot == -1)
-      strlcat(s, " (Auto)", len);
-}
-
-static void menu_action_setting_disp_set_label_poll_type_behavior(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings        = config_get_ptr();
-
-   if (!settings)
-      return;
-
    strlcpy(s2, path, len2);
    *w = 19;
-   switch (settings->uints.input_poll_type_behavior)
-   {
-      case 0:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_INPUT_POLL_TYPE_BEHAVIOR_EARLY), len);
-         break;
-      case 1:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_INPUT_POLL_TYPE_BEHAVIOR_NORMAL), len);
-         break;
-      case 2:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_INPUT_POLL_TYPE_BEHAVIOR_LATE), len);
-         break;
-   }
-}
 
-static void menu_action_setting_disp_set_label_xmb_theme(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings        = config_get_ptr();
-
-   if (!settings)
-      return;
-
-   strlcpy(s2, path, len2);
-   *w = 19;
-   switch (settings->uints.menu_xmb_theme)
-   {
-      case XMB_ICON_THEME_MONOCHROME:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_MONOCHROME), len);
-         break;
-      case XMB_ICON_THEME_FLATUI:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_FLATUI), len);
-         break;
-      case XMB_ICON_THEME_RETROACTIVE:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_RETROACTIVE), len);
-         break;
-      case XMB_ICON_THEME_RETROSYSTEM:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_RETROSYSTEM), len);
-         break;
-      case XMB_ICON_THEME_PIXEL:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_PIXEL), len);
-         break;
-      case XMB_ICON_THEME_NEOACTIVE:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_NEOACTIVE), len);
-         break;
-      case XMB_ICON_THEME_SYSTEMATIC:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_SYSTEMATIC), len);
-         break;
-      case XMB_ICON_THEME_DOTART:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_DOTART), len);
-         break;
-      case XMB_ICON_THEME_MONOCHROME_INVERTED:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_MONOCHROME_INVERTED), len);
-         break;
-      case XMB_ICON_THEME_CUSTOM:
-         strlcpy(s,
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_XMB_ICON_THEME_CUSTOM), len);
-         break;
-   }
+   if (driver_bluetooth_device_is_connected(i))
+      strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_BT_CONNECTED), len);
 }
 
 static void menu_action_setting_disp_set_label_wifi_is_online(
@@ -950,7 +825,6 @@ static void menu_action_setting_disp_set_label_wifi_is_online(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -961,342 +835,30 @@ static void menu_action_setting_disp_set_label_wifi_is_online(
       strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_ONLINE), len);
 }
 
-static void menu_action_setting_disp_set_label_xmb_layout(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings        = config_get_ptr();
-
-   strlcpy(s2, path, len2);
-   *w = 19;
-
-   if (!settings)
-      return;
-
-   switch (settings->uints.menu_xmb_layout)
-   {
-      case 0:
-         strlcpy(s, "Auto", len);
-         break;
-      case 1:
-         strlcpy(s, "Console", len);
-         break;
-      case 2:
-         strlcpy(s, "Handheld", len);
-         break;
-   }
-}
-
-static void menu_action_setting_disp_set_label_xmb_menu_color_theme(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings        = config_get_ptr();
-
-   strlcpy(s2, path, len2);
-   *w = 19;
-
-   if (!settings)
-      return;
-
-   switch (settings->uints.menu_xmb_color_theme)
-   {
-      case XMB_THEME_WALLPAPER:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_PLAIN),
-               len);
-         break;
-      case XMB_THEME_LEGACY_RED:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_LEGACY_RED),
-               len);
-         break;
-      case XMB_THEME_DARK_PURPLE:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_DARK_PURPLE),
-               len);
-         break;
-      case XMB_THEME_MIDNIGHT_BLUE:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_MIDNIGHT_BLUE),
-               len);
-         break;
-      case XMB_THEME_GOLDEN:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_GOLDEN),
-               len);
-         break;
-      case XMB_THEME_ELECTRIC_BLUE:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_ELECTRIC_BLUE),
-               len);
-         break;
-      case XMB_THEME_APPLE_GREEN:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_APPLE_GREEN),
-               len);
-         break;
-      case XMB_THEME_UNDERSEA:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_UNDERSEA),
-               len);
-         break;
-      case XMB_THEME_VOLCANIC_RED:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_VOLCANIC_RED),
-               len);
-         break;
-      case XMB_THEME_DARK:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_DARK),
-               len);
-         break;
-      case XMB_THEME_LIGHT:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_LIGHT),
-               len);
-         break;
-      case XMB_THEME_MORNING_BLUE:
-         strlcpy(s,
-               msg_hash_to_str(
-                 MENU_ENUM_LABEL_VALUE_XMB_MENU_COLOR_THEME_MORNING_BLUE),
-               len);
-         break;
-   }
-}
-
-static void menu_action_setting_disp_set_label_materialui_menu_color_theme(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings        = config_get_ptr();
-
-   strlcpy(s2, path, len2);
-   *w = 19;
-
-   if (!settings)
-      return;
-
-   switch (settings->uints.menu_materialui_color_theme)
-   {
-      case MATERIALUI_THEME_BLUE:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_MATERIALUI_MENU_COLOR_THEME_BLUE), len);
-         break;
-      case MATERIALUI_THEME_BLUE_GREY:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_MATERIALUI_MENU_COLOR_THEME_BLUE_GREY), len);
-         break;
-      case MATERIALUI_THEME_GREEN:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_MATERIALUI_MENU_COLOR_THEME_GREEN), len);
-         break;
-      case MATERIALUI_THEME_RED:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_MATERIALUI_MENU_COLOR_THEME_RED), len);
-         break;
-      case MATERIALUI_THEME_YELLOW:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_MATERIALUI_MENU_COLOR_THEME_YELLOW), len);
-         break;
-      case MATERIALUI_THEME_DARK_BLUE:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_MATERIALUI_MENU_COLOR_THEME_DARK_BLUE), len);
-         break;
-      case MATERIALUI_THEME_NVIDIA_SHIELD:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_MATERIALUI_MENU_COLOR_THEME_NVIDIA_SHIELD), len);
-         break;
-      default:
-         break;
-   }
-}
-
-static void menu_action_setting_disp_set_label_thumbnails(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings        = config_get_ptr();
-
-   if (!settings)
-      return;
-
-   strlcpy(s2, path, len2);
-   *w = 19;
-
-   switch (settings->uints.menu_thumbnails)
-   {
-      case 0:
-         strlcpy(s, msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_OFF), len);
-         break;
-      case 1:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_THUMBNAIL_MODE_SCREENSHOTS), len);
-         break;
-      case 2:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_THUMBNAIL_MODE_TITLE_SCREENS), len);
-         break;
-      case 3:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_THUMBNAIL_MODE_BOXARTS), len);
-         break;
-   }
-}
-
-static void menu_action_setting_disp_set_label_left_thumbnails(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings        = config_get_ptr();
-
-   if (!settings)
-      return;
-
-   strlcpy(s2, path, len2);
-   *w = 19;
-
-   switch (settings->uints.menu_left_thumbnails)
-   {
-      case 0:
-         strlcpy(s, msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_OFF), len);
-         break;
-      case 1:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_THUMBNAIL_MODE_SCREENSHOTS), len);
-         break;
-      case 2:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_THUMBNAIL_MODE_TITLE_SCREENS), len);
-         break;
-      case 3:
-         strlcpy(s,
-               msg_hash_to_str(
-                  MENU_ENUM_LABEL_VALUE_THUMBNAIL_MODE_BOXARTS), len);
-         break;
-   }
-}
-
-static void menu_action_setting_disp_set_label_menu_toggle_gamepad_combo(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings        = config_get_ptr();
-
-   if (!settings)
-      return;
-
-   strlcpy(s2, path, len2);
-   *w = 19;
-
-   switch (settings->uints.input_menu_toggle_gamepad_combo)
-   {
-      case INPUT_TOGGLE_NONE:
-         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NONE), len);
-         break;
-      case INPUT_TOGGLE_DOWN_Y_L_R:
-         strlcpy(s, "Down + L1 + R1 + Y", len);
-         break;
-      case INPUT_TOGGLE_L3_R3:
-         strlcpy(s, "L3 + R3", len);
-         break;
-      case INPUT_TOGGLE_L1_R1_START_SELECT:
-         strlcpy(s, "L1 + R1 + Start + Select", len);
-         break;
-      case INPUT_TOGGLE_START_SELECT:
-         strlcpy(s, "Start + Select", len);
-         break;
-   }
-}
-
-
 static void menu_action_setting_disp_set_label_menu_disk_index(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   unsigned images = 0, current                = 0;
-   struct retro_disk_control_callback *control = NULL;
-   rarch_system_info_t *system                 = runloop_get_system_info();
+   unsigned images             = 0;
+   unsigned current            = 0;
+   rarch_system_info_t *system = runloop_get_system_info();
 
    if (!system)
       return;
 
-   control = &system->disk_control_cb;
-
-   if (!control)
+   if (!disk_control_enabled(&system->disk_control))
       return;
 
    *w = 19;
    *s = '\0';
    strlcpy(s2, path, len2);
 
-   if (!control->get_num_images)
-      return;
-   if (!control->get_image_index)
-      return;
-
-   images  = control->get_num_images();
-   current = control->get_image_index();
+   images  = disk_control_get_num_images(&system->disk_control);
+   current = disk_control_get_image_index(&system->disk_control);
 
    if (current >= images)
       strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NO_DISK), len);
@@ -1304,49 +866,11 @@ static void menu_action_setting_disp_set_label_menu_disk_index(
       snprintf(s, len, "%u", current + 1);
 }
 
-static void menu_action_setting_disp_set_label_menu_input_keyboard_gamepad_mapping_type(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t         *settings = config_get_ptr();
-   unsigned width = 0, height = 0;
-
-   *w = 19;
-   *s = '\0';
-
-   (void)width;
-   (void)height;
-
-   strlcpy(s2, path, len2);
-
-   switch (settings->uints.input_keyboard_gamepad_mapping_type)
-   {
-      case 0:
-         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NONE), len);
-         break;
-      case 1:
-         strlcpy(s, "iPega PG-9017", len);
-         break;
-      case 2:
-         strlcpy(s, "8-bitty", len);
-         break;
-      case 3:
-         strlcpy(s, "SNES30 8bitdo", len);
-         break;
-   }
-}
-
 static void menu_action_setting_disp_set_label_menu_video_resolution(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -1361,7 +885,7 @@ static void menu_action_setting_disp_set_label_menu_video_resolution(
    {
 #ifdef GEKKO
       if (width == 0 || height == 0)
-         strlcpy(s, "DEFAULT", len);
+         strcpy_literal(s, "DEFAULT");
       else
 #endif
          snprintf(s, len, "%ux%u", width, height);
@@ -1370,31 +894,22 @@ static void menu_action_setting_disp_set_label_menu_video_resolution(
       strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NOT_AVAILABLE), len);
 }
 
-static void menu_action_setting_generic_disp_set_label(
-      unsigned *w, char *s, size_t len,
-      const char *path, const char *label,
-      char *s2, size_t len2)
-{
-   *s = '\0';
-
-   if (label)
-      strlcpy(s, label, len);
-   *w = (unsigned)strlen(s);
-
-   strlcpy(s2, path, len2);
-}
+#define MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len, path, label, label_size, s2, len2) \
+   *s = '\0'; \
+   strlcpy(s, label, len); \
+   *w = label_size; \
+   strlcpy(s2, path, len2)
 
 static void menu_action_setting_disp_set_label_menu_file_plain(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(FILE)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(FILE)", STRLEN_CONST("(FILE)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_imageviewer(
@@ -1402,12 +917,11 @@ static void menu_action_setting_disp_set_label_menu_file_imageviewer(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(IMAGE)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(IMAGE)", STRLEN_CONST("(IMAGE)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_movie(
@@ -1415,12 +929,11 @@ static void menu_action_setting_disp_set_label_movie(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(MOVIE)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(MOVIE)", STRLEN_CONST("(MOVIE)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_music(
@@ -1428,25 +941,11 @@ static void menu_action_setting_disp_set_label_music(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(MUSIC)", s2, len2);
-}
-
-static void menu_action_setting_disp_set_label_menu_file_use_directory(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, NULL, s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(MUSIC)", STRLEN_CONST("(MUSIC)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_directory(
@@ -1454,25 +953,24 @@ static void menu_action_setting_disp_set_label_menu_file_directory(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(DIR)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(DIR)", STRLEN_CONST("(DIR)"), s2, len2);
 }
 
-static void menu_action_setting_disp_set_label_menu_file_parent_directory(
+static void menu_action_setting_disp_set_label_generic(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, NULL, s2, len2);
+   *s = '\0';
+   *w = (unsigned)strlen(s);
+   strlcpy(s2, path, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_carchive(
@@ -1480,12 +978,11 @@ static void menu_action_setting_disp_set_label_menu_file_carchive(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(COMP)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(COMP)", STRLEN_CONST("(COMP)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_shader(
@@ -1493,12 +990,11 @@ static void menu_action_setting_disp_set_label_menu_file_shader(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(SHADER)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(SHADER)", STRLEN_CONST("(SHADER)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_shader_preset(
@@ -1506,12 +1002,11 @@ static void menu_action_setting_disp_set_label_menu_file_shader_preset(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(PRESET)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(PRESET)", STRLEN_CONST("(PRESET)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_in_carchive(
@@ -1519,12 +1014,11 @@ static void menu_action_setting_disp_set_label_menu_file_in_carchive(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(CFILE)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(CFILE)", STRLEN_CONST("(CFILE)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_overlay(
@@ -1532,25 +1026,37 @@ static void menu_action_setting_disp_set_label_menu_file_overlay(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(OVERLAY)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(OVERLAY)", STRLEN_CONST("(OVERLAY)"), s2, len2);
 }
+
+#ifdef HAVE_VIDEO_LAYOUT
+static void menu_action_setting_disp_set_label_menu_file_video_layout(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(LAYOUT)", STRLEN_CONST("(LAYOUT)"), s2, len2);
+}
+#endif
 
 static void menu_action_setting_disp_set_label_menu_file_config(
       file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(CONFIG)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(CONFIG)", STRLEN_CONST("(CONFIG)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_font(
@@ -1558,12 +1064,11 @@ static void menu_action_setting_disp_set_label_menu_file_font(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(FONT)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(FONT)", STRLEN_CONST("(FONT)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_filter(
@@ -1571,32 +1076,11 @@ static void menu_action_setting_disp_set_label_menu_file_filter(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(FILTER)", s2, len2);
-}
-
-static void menu_action_setting_disp_set_label_menu_file_url_core(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   const char *alt = NULL;
-   strlcpy(s, "(CORE)", len);
-
-   menu_entries_get_at_offset(list, i, NULL,
-         NULL, NULL, NULL, &alt);
-
-   *w = (unsigned)strlen(s);
-   if (alt)
-      strlcpy(s2, alt, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(FILTER)", STRLEN_CONST("(FILTER)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_rdb(
@@ -1604,12 +1088,11 @@ static void menu_action_setting_disp_set_label_menu_file_rdb(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(RDB)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(RDB)", STRLEN_CONST("(RDB)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_cursor(
@@ -1617,12 +1100,11 @@ static void menu_action_setting_disp_set_label_menu_file_cursor(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(CURSOR)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(CURSOR)", STRLEN_CONST("(CURSOR)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_menu_file_cheat(
@@ -1630,12 +1112,11 @@ static void menu_action_setting_disp_set_label_menu_file_cheat(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   menu_action_setting_generic_disp_set_label(w, s, len,
-         path, "(CHEAT)", s2, len2);
+   MENU_ACTION_SETTING_GENERIC_DISP_SET_LABEL_2(w, s, len,
+         path, "(CHEAT)", STRLEN_CONST("(CHEAT)"), s2, len2);
 }
 
 static void menu_action_setting_disp_set_label_core_option_create(
@@ -1643,22 +1124,16 @@ static void menu_action_setting_disp_set_label_core_option_create(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   rarch_system_info_t *system = runloop_get_system_info();
-
-   if (!system)
-      return;
-
    *s = '\0';
    *w = 19;
 
-   strlcpy(s, "", len);
+   strcpy_literal(s, "");
 
    if (!string_is_empty(path_get(RARCH_PATH_BASENAME)))
-      strlcpy(s,  path_basename(path_get(RARCH_PATH_BASENAME)), len);
+      strlcpy(s, path_basename(path_get(RARCH_PATH_BASENAME)), len);
 
    strlcpy(s2, path, len2);
 }
@@ -1667,83 +1142,201 @@ static void menu_action_setting_disp_set_label_playlist_associations(file_list_t
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   char playlist_name_with_ext[255];
-   bool found_matching_core_association         = false;
-   settings_t         *settings                 = config_get_ptr();
-   struct string_list *str_list                 = string_split(settings->arrays.playlist_names, ";");
-   struct string_list *str_list2                = string_split(settings->arrays.playlist_cores, ";");
+   playlist_t *playlist  = playlist_get_cached();
+   const char *core_name = NULL;
 
-   strlcpy(s2, path, len2);
-
-   playlist_name_with_ext[0] = '\0';
    *s = '\0';
    *w = 19;
 
-   fill_pathname_noext(playlist_name_with_ext, path,
-         file_path_str(FILE_PATH_LPL_EXTENSION),
-         sizeof(playlist_name_with_ext));
-
-   for (i = 0; i < str_list->size; i++)
-   {
-      if (string_is_equal(str_list->elems[i].data, playlist_name_with_ext))
-      {
-         if (str_list->size != str_list2->size)
-            break;
-
-         if (str_list2->elems[i].data == NULL)
-            break;
-
-         found_matching_core_association = true;
-         strlcpy(s, str_list2->elems[i].data, len);
-      }
-   }
-
-   string_list_free(str_list);
-   string_list_free(str_list2);
-
-   if (string_is_equal(s, file_path_str(FILE_PATH_DETECT)) || !found_matching_core_association)
-      strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NOT_AVAILABLE), len);
-   else
-   {
-      char buf[PATH_MAX_LENGTH];
-      core_info_list_t *list = NULL;
-
-      core_info_get_list(&list);
-
-      if (core_info_list_get_display_name(list, s, buf, sizeof(buf)))
-         strlcpy(s, buf, len);
-   }
-
    strlcpy(s2, path, len2);
+
+   if (!playlist)
+      return;
+
+   core_name = playlist_get_default_core_name(playlist);
+
+   if (!string_is_empty(core_name) &&
+       !string_is_equal(core_name, "DETECT"))
+      strlcpy(s, core_name, len);
+   else
+      strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NOT_AVAILABLE), len);
 }
 
-static void menu_action_setting_disp_set_label_core_options(file_list_t* list,
+static void menu_action_setting_disp_set_label_playlist_label_display_mode(
+      file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
+      const char *path,
+      char *s2, size_t len2)
+{
+   enum playlist_label_display_mode label_display_mode;
+   playlist_t *playlist  = playlist_get_cached();
+
+   if (!playlist)
+      return;
+
+   label_display_mode = playlist_get_label_display_mode(playlist);
+
+   *w = 19;
+
+   strlcpy(s2, path, len2);
+
+   switch (label_display_mode)
+   {
+      case LABEL_DISPLAY_MODE_REMOVE_PARENTHESES :
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE_REMOVE_PARENS), len);
+         break;
+      case LABEL_DISPLAY_MODE_REMOVE_BRACKETS :
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE_REMOVE_BRACKETS), len);
+         break;
+      case LABEL_DISPLAY_MODE_REMOVE_PARENTHESES_AND_BRACKETS :
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE_REMOVE_PARENS_AND_BRACKETS), len);
+         break;
+      case LABEL_DISPLAY_MODE_KEEP_DISC_INDEX :
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE_KEEP_DISC_INDEX), len);
+         break;
+      case LABEL_DISPLAY_MODE_KEEP_REGION :
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE_KEEP_REGION), len);
+         break;
+      case LABEL_DISPLAY_MODE_KEEP_REGION_AND_DISC_INDEX :
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE_KEEP_REGION_AND_DISC_INDEX), len);
+         break;
+      default:
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE_DEFAULT), len);
+   }
+}
+
+static const char *get_playlist_thumbnail_mode_value(playlist_t *playlist, enum playlist_thumbnail_id thumbnail_id)
+{
+   enum playlist_thumbnail_mode thumbnail_mode =
+         playlist_get_thumbnail_mode(playlist, thumbnail_id);
+
+   switch (thumbnail_mode)
+   {
+      case PLAYLIST_THUMBNAIL_MODE_OFF:
+         return msg_hash_to_str(MENU_ENUM_LABEL_VALUE_OFF);
+      case PLAYLIST_THUMBNAIL_MODE_SCREENSHOTS:
+         return msg_hash_to_str(MENU_ENUM_LABEL_VALUE_THUMBNAIL_MODE_SCREENSHOTS);
+      case PLAYLIST_THUMBNAIL_MODE_TITLE_SCREENS:
+         return msg_hash_to_str(MENU_ENUM_LABEL_VALUE_THUMBNAIL_MODE_TITLE_SCREENS);
+      case PLAYLIST_THUMBNAIL_MODE_BOXARTS:
+         return msg_hash_to_str(MENU_ENUM_LABEL_VALUE_THUMBNAIL_MODE_BOXARTS);
+      default:
+         /* PLAYLIST_THUMBNAIL_MODE_DEFAULT */
+         break;
+   }
+
+   return msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_THUMBNAIL_MODE_DEFAULT);
+}
+
+static void menu_action_setting_disp_set_label_playlist_right_thumbnail_mode(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   playlist_t *playlist  = playlist_get_cached();
+
+   *s = '\0';
+   *w = 19;
+
+   strlcpy(s2, path, len2);
+
+   if (!playlist)
+      return;
+
+   strlcpy(
+         s,
+         get_playlist_thumbnail_mode_value(playlist, PLAYLIST_THUMBNAIL_RIGHT),
+         len);
+}
+
+static void menu_action_setting_disp_set_label_playlist_left_thumbnail_mode(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   playlist_t *playlist  = playlist_get_cached();
+
+   *s = '\0';
+   *w = 19;
+
+   strlcpy(s2, path, len2);
+
+   if (!playlist)
+      return;
+
+   strlcpy(
+         s,
+         get_playlist_thumbnail_mode_value(playlist, PLAYLIST_THUMBNAIL_LEFT),
+         len);
+}
+
+static void menu_action_setting_disp_set_label_playlist_sort_mode(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   enum playlist_sort_mode sort_mode;
+   playlist_t *playlist  = playlist_get_cached();
+
+   if (!playlist)
+      return;
+
+   sort_mode = playlist_get_sort_mode(playlist);
+
+   *w = 19;
+
+   strlcpy(s2, path, len2);
+
+   switch (sort_mode)
+   {
+      case PLAYLIST_SORT_MODE_ALPHABETICAL:
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_SORT_MODE_ALPHABETICAL), len);
+         break;
+      case PLAYLIST_SORT_MODE_OFF:
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_SORT_MODE_OFF), len);
+         break;
+      case PLAYLIST_SORT_MODE_DEFAULT:
+      default:
+         strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLIST_MANAGER_SORT_MODE_DEFAULT), len);
+         break;
+   }
+}
+
+static void menu_action_setting_disp_set_label_core_options(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
       const char *path,
       char *s2, size_t len2)
 {
    core_option_manager_t *coreopts = NULL;
-   const char *core_opt = NULL;
+   const char *coreopt_label       = NULL;
 
    *s = '\0';
    *w = 19;
 
    if (rarch_ctl(RARCH_CTL_CORE_OPTIONS_LIST_GET, &coreopts))
    {
-      core_opt = core_option_manager_get_val(coreopts,
+      coreopt_label = core_option_manager_get_val_label(coreopts,
             type - MENU_SETTINGS_CORE_OPTION_START);
 
-      strlcpy(s, "", len);
-
-      if (core_opt)
-         strlcpy(s, core_opt, len);
+      if (!string_is_empty(coreopt_label))
+         strlcpy(s, coreopt_label, len);
    }
 
    strlcpy(s2, path, len2);
@@ -1754,17 +1347,82 @@ static void menu_action_setting_disp_set_label_achievement_information(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   *s = '\0';
-   *w = 2;
+   menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   rarch_setting_t *setting  = cbs->setting;
 
-   menu_setting_get_label(list, s,
-         len, w, type, label, entry_label, i);
+   *s                        = '\0';
+   *w                        = 2;
+
+   if (setting && setting->get_string_representation)
+      setting->get_string_representation(setting, s, len);
 
    strlcpy(s2, path, len2);
+}
+
+static void menu_action_setting_disp_set_label_manual_content_scan_dir(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   const char *content_dir = NULL;
+
+   *s = '\0';
+   *w = 19;
+
+   strlcpy(s2, path, len2);
+
+   if (!manual_content_scan_get_menu_content_dir(&content_dir))
+      return;
+
+   strlcpy(s, content_dir, len);
+}
+
+static void menu_action_setting_disp_set_label_manual_content_scan_system_name(
+      file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   const char *system_name = NULL;
+
+   *s = '\0';
+   *w = 19;
+
+   strlcpy(s2, path, len2);
+
+   if (!manual_content_scan_get_menu_system_name(&system_name))
+      return;
+
+   strlcpy(s, system_name, len);
+}
+
+static void menu_action_setting_disp_set_label_manual_content_scan_core_name(file_list_t* list,
+      unsigned *w, unsigned type, unsigned i,
+      const char *label,
+      char *s, size_t len,
+      const char *path,
+      char *s2, size_t len2)
+{
+   const char *core_name = NULL;
+
+   *s = '\0';
+   *w = 19;
+
+   strlcpy(s2, path, len2);
+
+   if (!manual_content_scan_get_menu_core_name(&core_name))
+      return;
+
+   strlcpy(s, core_name, len);
 }
 
 static void menu_action_setting_disp_set_label_no_items(
@@ -1772,7 +1430,6 @@ static void menu_action_setting_disp_set_label_no_items(
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
@@ -1782,38 +1439,22 @@ static void menu_action_setting_disp_set_label_no_items(
    strlcpy(s2, path, len2);
 }
 
-static void menu_action_setting_disp_set_label_video_msg_color(
-      file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   rarch_setting_t *setting = menu_setting_find(list->list[i].label);
-
-   if (!setting)
-      return;
-
-   *w = 19;
-
-   snprintf(s, len, "%d", (int)(*setting->value.target.fraction * 255.0f));
-}
-
 static void menu_action_setting_disp_set_label(file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   *s = '\0';
-   *w = 19;
+   menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   rarch_setting_t *setting  = cbs->setting;
 
-   menu_setting_get_label(list, s,
-         len, w, type, label, entry_label, i);
+   *s                        = '\0';
+   *w                        = 19;
+
+   if (setting && setting->get_string_representation)
+      setting->get_string_representation(setting, s, len);
 
    strlcpy(s2, path, len2);
 }
@@ -1822,11 +1463,12 @@ static void menu_action_setting_disp_set_label_setting_bool(file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   rarch_setting_t *setting = menu_setting_find(list->list[i].label);
+   menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   rarch_setting_t *setting  = cbs->setting;
 
    *s = '\0';
    *w = 19;
@@ -1846,15 +1488,17 @@ static void menu_action_setting_disp_set_label_setting_string(file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   rarch_setting_t *setting = menu_setting_find(list->list[i].label);
+   menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   rarch_setting_t *setting  = cbs->setting;
 
    *w = 19;
 
-   strlcpy(s, setting->value.target.string, len);
+   if (setting->value.target.string)
+      strlcpy(s, setting->value.target.string, len);
 
    strlcpy(s2, path, len2);
 }
@@ -1863,11 +1507,12 @@ static void menu_action_setting_disp_set_label_setting_path(file_list_t* list,
       unsigned *w, unsigned type, unsigned i,
       const char *label,
       char *s, size_t len,
-      const char *entry_label,
       const char *path,
       char *s2, size_t len2)
 {
-   rarch_setting_t *setting = menu_setting_find(list->list[i].label);
+   menu_file_list_cbs_t *cbs = (menu_file_list_cbs_t*)
+      list->list[i].actiondata;
+   rarch_setting_t *setting  = cbs->setting;
    const char *basename     = setting ? path_basename(setting->value.target.string) : NULL;
 
    *w = 19;
@@ -1877,86 +1522,6 @@ static void menu_action_setting_disp_set_label_setting_path(file_list_t* list,
 
    strlcpy(s2, path, len2);
 }
-
-#ifdef HAVE_NETWORKING
-static void menu_action_setting_disp_set_label_netplay_share_digital(file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings = config_get_ptr();
-   const char *src;
-
-   if (!settings)
-      return;
-
-   strlcpy(s2, path, len2);
-   *w = 19;
-   switch (settings->uints.netplay_share_digital)
-   {
-      case RARCH_NETPLAY_SHARE_DIGITAL_NO_PREFERENCE:
-         src = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_NO_PREFERENCE);
-         break;
-
-      case RARCH_NETPLAY_SHARE_DIGITAL_OR:
-         src = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_DIGITAL_OR);
-         break;
-
-      case RARCH_NETPLAY_SHARE_DIGITAL_XOR:
-         src = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_DIGITAL_XOR);
-         break;
-
-      case RARCH_NETPLAY_SHARE_DIGITAL_VOTE:
-         src = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_DIGITAL_VOTE);
-         break;
-
-      default:
-         src = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_NONE);
-         break;
-   }
-   strlcpy(s, src, len);
-}
-
-static void menu_action_setting_disp_set_label_netplay_share_analog(file_list_t* list,
-      unsigned *w, unsigned type, unsigned i,
-      const char *label,
-      char *s, size_t len,
-      const char *entry_label,
-      const char *path,
-      char *s2, size_t len2)
-{
-   settings_t *settings = config_get_ptr();
-   const char *src;
-
-   if (!settings)
-      return;
-
-   strlcpy(s2, path, len2);
-   *w = 19;
-   switch (settings->uints.netplay_share_analog)
-   {
-      case RARCH_NETPLAY_SHARE_ANALOG_NO_PREFERENCE:
-         src = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_NO_PREFERENCE);
-         break;
-
-      case RARCH_NETPLAY_SHARE_ANALOG_MAX:
-         src = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_ANALOG_MAX);
-         break;
-
-      case RARCH_NETPLAY_SHARE_ANALOG_AVERAGE:
-         src = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_ANALOG_AVERAGE);
-         break;
-
-      default:
-         src = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_SHARE_NONE);
-         break;
-   }
-   strlcpy(s, src, len);
-}
-#endif
 
 static int menu_cbs_init_bind_get_string_representation_compare_label(
       menu_file_list_cbs_t *cbs)
@@ -1974,93 +1539,64 @@ static int menu_cbs_init_bind_get_string_representation_compare_label(
          case MENU_ENUM_LABEL_MIDI_DRIVER:
          case MENU_ENUM_LABEL_LOCATION_DRIVER:
          case MENU_ENUM_LABEL_CAMERA_DRIVER:
+         case MENU_ENUM_LABEL_BLUETOOTH_DRIVER:
          case MENU_ENUM_LABEL_WIFI_DRIVER:
          case MENU_ENUM_LABEL_MENU_DRIVER:
             BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label);
             break;
-         case MENU_ENUM_LABEL_STATE_SLOT:
+         case MENU_ENUM_LABEL_CONNECT_BLUETOOTH:
             BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_state);
-            break;
-         case MENU_ENUM_LABEL_INPUT_POLL_TYPE_BEHAVIOR:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_poll_type_behavior);
-            break;
-         case MENU_ENUM_LABEL_XMB_LAYOUT:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_xmb_layout);
-            break;
-         case MENU_ENUM_LABEL_XMB_THEME:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_xmb_theme);
+                  menu_action_setting_disp_set_label_bluetooth_is_connected);
             break;
          case MENU_ENUM_LABEL_CONNECT_WIFI:
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_wifi_is_online);
             break;
-         case MENU_ENUM_LABEL_XMB_MENU_COLOR_THEME:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_xmb_menu_color_theme);
-            break;
-         case MENU_ENUM_LABEL_MATERIALUI_MENU_COLOR_THEME:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_materialui_menu_color_theme);
-            break;
-         case MENU_ENUM_LABEL_THUMBNAILS:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_thumbnails);
-            break;
-         case MENU_ENUM_LABEL_LEFT_THUMBNAILS:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_left_thumbnails);
-            break;
-         case MENU_ENUM_LABEL_INPUT_MENU_ENUM_TOGGLE_GAMEPAD_COMBO:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_menu_toggle_gamepad_combo);
-            break;
          case MENU_ENUM_LABEL_CHEAT_NUM_PASSES:
+#ifdef HAVE_CHEATS
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_cheat_num_passes);
+#endif
             break;
          case MENU_ENUM_LABEL_REMAP_FILE_LOAD:
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_remap_file_load);
             break;
-         case MENU_ENUM_LABEL_AUDIO_RESAMPLER_QUALITY:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_audio_resampler_quality);
-            break;
          case MENU_ENUM_LABEL_VIDEO_SHADER_FILTER_PASS:
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_shader_filter_pass);
+#endif
             break;
          case MENU_ENUM_LABEL_VIDEO_SHADER_SCALE_PASS:
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_shader_scale_pass);
+#endif
             break;
          case MENU_ENUM_LABEL_VIDEO_SHADER_NUM_PASSES:
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_shader_num_passes);
+#endif
             break;
          case MENU_ENUM_LABEL_SHADER_WATCH_FOR_CHANGES:
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_shader_watch_for_changes);
-            break;
-         case MENU_ENUM_LABEL_XMB_RIBBON_ENABLE:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_pipeline);
+#endif
             break;
          case MENU_ENUM_LABEL_VIDEO_SHADER_PASS:
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_shader_pass);
+#endif
             break;
          case MENU_ENUM_LABEL_VIDEO_SHADER_DEFAULT_FILTER:
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_shader_default_filter);
-            break;
-         case MENU_ENUM_LABEL_VIDEO_FILTER:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_filter);
+#endif
             break;
          case MENU_ENUM_LABEL_CONFIGURATIONS:
             BIND_ACTION_GET_VALUE(cbs,
@@ -2070,21 +1606,7 @@ static int menu_cbs_init_bind_get_string_representation_compare_label(
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_menu_video_resolution);
             break;
-         case MENU_ENUM_LABEL_INPUT_KEYBOARD_GAMEPAD_MAPPING_TYPE:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_menu_input_keyboard_gamepad_mapping_type);
-            break;
-#ifdef HAVE_NETWORKING
-         case MENU_ENUM_LABEL_NETPLAY_SHARE_DIGITAL:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_netplay_share_digital);
-            break;
-         case MENU_ENUM_LABEL_NETPLAY_SHARE_ANALOG:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_netplay_share_analog);
-            break;
-#endif
-         case MENU_ENUM_LABEL_CONTENT_COLLECTION_LIST:
+         case MENU_ENUM_LABEL_PLAYLISTS_TAB:
          case MENU_ENUM_LABEL_LOAD_CONTENT_HISTORY:
          case MENU_ENUM_LABEL_DOWNLOADED_FILE_DETECT_CORE_LIST:
          case MENU_ENUM_LABEL_FAVORITES:
@@ -2093,6 +1615,7 @@ static int menu_cbs_init_bind_get_string_representation_compare_label(
          case MENU_ENUM_LABEL_SHADER_OPTIONS:
          case MENU_ENUM_LABEL_VIDEO_SHADER_PARAMETERS:
          case MENU_ENUM_LABEL_VIDEO_SHADER_PRESET_PARAMETERS:
+         case MENU_ENUM_LABEL_VIDEO_SHADER_PRESET_SAVE:
          case MENU_ENUM_LABEL_VIDEO_SHADER_PRESET_SAVE_AS:
          case MENU_ENUM_LABEL_CHEAT_FILE_SAVE_AS:
          case MENU_ENUM_LABEL_FRONTEND_COUNTERS:
@@ -2113,20 +1636,54 @@ static int menu_cbs_init_bind_get_string_representation_compare_label(
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_menu_more);
             break;
-         case MENU_ENUM_LABEL_VIDEO_MESSAGE_COLOR_RED:
-         case MENU_ENUM_LABEL_VIDEO_MESSAGE_COLOR_GREEN:
-         case MENU_ENUM_LABEL_VIDEO_MESSAGE_COLOR_BLUE:
+         case MENU_ENUM_LABEL_PLAYLIST_MANAGER_DEFAULT_CORE:
             BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_video_msg_color);
+                  menu_action_setting_disp_set_label_playlist_associations);
+            break;
+         case MENU_ENUM_LABEL_PLAYLIST_MANAGER_LABEL_DISPLAY_MODE:
+            BIND_ACTION_GET_VALUE(cbs,
+                  menu_action_setting_disp_set_label_playlist_label_display_mode);
+            break;
+         case MENU_ENUM_LABEL_PLAYLIST_MANAGER_RIGHT_THUMBNAIL_MODE:
+            BIND_ACTION_GET_VALUE(cbs,
+                  menu_action_setting_disp_set_label_playlist_right_thumbnail_mode);
+            break;
+         case MENU_ENUM_LABEL_PLAYLIST_MANAGER_LEFT_THUMBNAIL_MODE:
+            BIND_ACTION_GET_VALUE(cbs,
+                  menu_action_setting_disp_set_label_playlist_left_thumbnail_mode);
+            break;
+         case MENU_ENUM_LABEL_PLAYLIST_MANAGER_SORT_MODE:
+            BIND_ACTION_GET_VALUE(cbs,
+                  menu_action_setting_disp_set_label_playlist_sort_mode);
+            break;
+         case MENU_ENUM_LABEL_MANUAL_CONTENT_SCAN_DIR:
+            BIND_ACTION_GET_VALUE(cbs,
+                  menu_action_setting_disp_set_label_manual_content_scan_dir);
+            break;
+         case MENU_ENUM_LABEL_MANUAL_CONTENT_SCAN_SYSTEM_NAME:
+            BIND_ACTION_GET_VALUE(cbs,
+                  menu_action_setting_disp_set_label_manual_content_scan_system_name);
+            break;
+         case MENU_ENUM_LABEL_MANUAL_CONTENT_SCAN_CORE_NAME:
+            BIND_ACTION_GET_VALUE(cbs,
+                  menu_action_setting_disp_set_label_manual_content_scan_core_name);
+            break;
+#ifdef HAVE_NETWORKING
+         case MENU_ENUM_LABEL_CORE_UPDATER_ENTRY:
+            BIND_ACTION_GET_VALUE(cbs,
+                  menu_action_setting_disp_set_label_core_updater_entry);
+            break;
+#endif
+         case MENU_ENUM_LABEL_CORE_MANAGER_ENTRY:
+            BIND_ACTION_GET_VALUE(cbs,
+                  menu_action_setting_disp_set_label_core_manager_entry);
             break;
          default:
-            return - 1;
+            return -1;
       }
    }
    else
-   {
       return -1;
-   }
 
    return 0;
 }
@@ -2134,176 +1691,207 @@ static int menu_cbs_init_bind_get_string_representation_compare_label(
 static int menu_cbs_init_bind_get_string_representation_compare_type(
       menu_file_list_cbs_t *cbs, unsigned type)
 {
-   if (type >= MENU_SETTINGS_AUDIO_MIXER_STREAM_BEGIN
-      && type <= MENU_SETTINGS_AUDIO_MIXER_STREAM_END)
+   unsigned i;
+   typedef struct info_range_list
    {
-      BIND_ACTION_GET_VALUE(cbs,
-         menu_action_setting_audio_mixer_stream_name);
-      return 0;
-   }
-   else if (type >= MENU_SETTINGS_AUDIO_MIXER_STREAM_ACTIONS_VOLUME_BEGIN
-         && type <= MENU_SETTINGS_AUDIO_MIXER_STREAM_ACTIONS_VOLUME_END)
-   {
-      BIND_ACTION_GET_VALUE(cbs,
-         menu_action_setting_audio_mixer_stream_volume);
-   }
-   else if (type >= MENU_SETTINGS_INPUT_DESC_BEGIN
-         && type <= MENU_SETTINGS_INPUT_DESC_END)
-   {
-      BIND_ACTION_GET_VALUE(cbs,
-         menu_action_setting_disp_set_label_input_desc);
-   }
-   else if (type >= MENU_SETTINGS_CHEAT_BEGIN
-         && type <= MENU_SETTINGS_CHEAT_END)
-   {
-      BIND_ACTION_GET_VALUE(cbs,
-         menu_action_setting_disp_set_label_cheat);
-   }
-   else if (type >= MENU_SETTINGS_PERF_COUNTERS_BEGIN
-         && type <= MENU_SETTINGS_PERF_COUNTERS_END)
-   {
-      BIND_ACTION_GET_VALUE(cbs,
-         menu_action_setting_disp_set_label_perf_counters);
-   }
-   else if (type >= MENU_SETTINGS_LIBRETRO_PERF_COUNTERS_BEGIN
-         && type <= MENU_SETTINGS_LIBRETRO_PERF_COUNTERS_END)
-   {
-      BIND_ACTION_GET_VALUE(cbs,
-         menu_action_setting_disp_set_label_libretro_perf_counters);
-   }
-   else if (type >= MENU_SETTINGS_INPUT_DESC_KBD_BEGIN
-      && type <= MENU_SETTINGS_INPUT_DESC_KBD_END)
-   {
-      BIND_ACTION_GET_VALUE(cbs,
-         menu_action_setting_disp_set_label_input_desc_kbd);
-   }
-   else
-   {
-      switch (type)
+      unsigned min;
+      unsigned max;
+      void (*cb)(file_list_t* list,
+            unsigned *w, unsigned type, unsigned i,
+            const char *label, char *s, size_t len,
+            const char *path,
+            char *path_buf, size_t path_buf_size);
+   } info_range_list_t;
+
+   info_range_list_t info_list[] = {
+#ifdef HAVE_AUDIOMIXER
       {
-         case MENU_SETTINGS_CORE_OPTION_CREATE:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_core_option_create);
-            break;
-         case FILE_TYPE_CORE:
-         case FILE_TYPE_DIRECT_LOAD:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_core);
-            break;
-         case FILE_TYPE_PLAIN:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_plain);
-            break;
-         case FILE_TYPE_MOVIE:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_movie);
-            break;
-         case FILE_TYPE_MUSIC:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_music);
-            break;
-         case FILE_TYPE_IMAGE:
-         case FILE_TYPE_IMAGEVIEWER:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_imageviewer);
-            break;
-         case FILE_TYPE_USE_DIRECTORY:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_use_directory);
-            break;
-         case FILE_TYPE_DIRECTORY:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_directory);
-            break;
-         case FILE_TYPE_PARENT_DIRECTORY:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_parent_directory);
-            break;
-         case FILE_TYPE_CARCHIVE:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_carchive);
-            break;
-         case FILE_TYPE_OVERLAY:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_overlay);
-            break;
-         case FILE_TYPE_FONT:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_font);
-            break;
-         case FILE_TYPE_SHADER:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_shader);
-            break;
-         case FILE_TYPE_SHADER_PRESET:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_shader_preset);
-            break;
-         case FILE_TYPE_CONFIG:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_config);
-            break;
-         case FILE_TYPE_IN_CARCHIVE:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_in_carchive);
-            break;
-         case FILE_TYPE_VIDEOFILTER:
-         case FILE_TYPE_AUDIOFILTER:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_filter);
-            break;
-         case FILE_TYPE_DOWNLOAD_CORE:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_url_core);
-            break;
-         case FILE_TYPE_RDB:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_rdb);
-            break;
-         case FILE_TYPE_CURSOR:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_cursor);
-            break;
-         case FILE_TYPE_CHEAT:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_file_cheat);
-            break;
-         case MENU_SETTING_SUBGROUP:
-         case MENU_SETTINGS_CUSTOM_BIND_ALL:
-         case MENU_SETTINGS_CUSTOM_BIND_DEFAULT_ALL:
-         case MENU_SETTING_ACTION:
-         case MENU_SETTING_ACTION_LOADSTATE:
-         case 7:   /* Run */
-         case MENU_SETTING_ACTION_DELETE_ENTRY:
-         case MENU_SETTING_ACTION_CORE_DISK_OPTIONS:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_more);
-            break;
-         case MENU_SETTINGS_CORE_DISK_OPTIONS_DISK_INDEX:
-            BIND_ACTION_GET_VALUE(cbs,
-               menu_action_setting_disp_set_label_menu_disk_index);
-            break;
-         case 31: /* Database entry */
-            BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label_db_entry);
-            break;
-         case 25: /* URL directory entries */
-         case 26: /* URL entries */
-            BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label_entry_url);
-            break;
-         case MENU_SETTING_NO_ITEM:
-            BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label_no_items);
-            break;
-         case 32: /* Recent history entry */
-         case 65535: /* System info entry */
-            BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label_entry);
-            break;
-         default:
-#if 0
-            RARCH_LOG("type: %d\n", type);
+         MENU_SETTINGS_AUDIO_MIXER_STREAM_BEGIN, 
+         MENU_SETTINGS_AUDIO_MIXER_STREAM_END,
+         menu_action_setting_audio_mixer_stream_name
+      },
+      {
+         MENU_SETTINGS_AUDIO_MIXER_STREAM_ACTIONS_VOLUME_BEGIN,
+         MENU_SETTINGS_AUDIO_MIXER_STREAM_ACTIONS_VOLUME_END,
+         menu_action_setting_audio_mixer_stream_volume
+      },
 #endif
-            BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label);
-            break;
+      {
+         MENU_SETTINGS_INPUT_DESC_BEGIN,
+         MENU_SETTINGS_INPUT_DESC_END,
+         menu_action_setting_disp_set_label_input_desc
+      },
+#ifdef HAVE_CHEATS
+      {
+         MENU_SETTINGS_CHEAT_BEGIN,
+         MENU_SETTINGS_CHEAT_END,
+         menu_action_setting_disp_set_label_cheat
+      },
+#endif
+      {
+         MENU_SETTINGS_PERF_COUNTERS_BEGIN,
+         MENU_SETTINGS_PERF_COUNTERS_END,
+         menu_action_setting_disp_set_label_perf_counters
+      },
+      {
+         MENU_SETTINGS_LIBRETRO_PERF_COUNTERS_BEGIN,
+         MENU_SETTINGS_LIBRETRO_PERF_COUNTERS_END,
+         menu_action_setting_disp_set_label_libretro_perf_counters
+      },
+      {
+         MENU_SETTINGS_INPUT_DESC_KBD_BEGIN,
+         MENU_SETTINGS_INPUT_DESC_KBD_END,
+         menu_action_setting_disp_set_label_input_desc_kbd
+      },
+   };
+
+   for (i = 0; i < ARRAY_SIZE(info_list); i++)
+   {
+      if (type >= info_list[i].min && type <= info_list[i].max)
+      {
+         BIND_ACTION_GET_VALUE(cbs, info_list[i].cb);
+         return 0;
       }
+   }
+
+   switch (type)
+   {
+      case MENU_SETTINGS_CORE_OPTION_CREATE:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_core_option_create);
+         break;
+      case FILE_TYPE_CORE:
+      case FILE_TYPE_DIRECT_LOAD:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_core);
+         break;
+      case FILE_TYPE_PLAIN:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_plain);
+         break;
+      case FILE_TYPE_MOVIE:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_movie);
+         break;
+      case FILE_TYPE_MUSIC:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_music);
+         break;
+      case FILE_TYPE_IMAGE:
+      case FILE_TYPE_IMAGEVIEWER:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_imageviewer);
+         break;
+      case FILE_TYPE_DIRECTORY:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_directory);
+         break;
+      case FILE_TYPE_PARENT_DIRECTORY:
+      case FILE_TYPE_USE_DIRECTORY:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_generic);
+         break;
+      case FILE_TYPE_CARCHIVE:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_carchive);
+         break;
+      case FILE_TYPE_OVERLAY:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_overlay);
+         break;
+#ifdef HAVE_VIDEO_LAYOUT
+      case FILE_TYPE_VIDEO_LAYOUT:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_video_layout);
+         break;
+#endif
+      case FILE_TYPE_FONT:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_font);
+         break;
+      case FILE_TYPE_SHADER:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_shader);
+         break;
+      case FILE_TYPE_SHADER_PRESET:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_shader_preset);
+         break;
+      case FILE_TYPE_CONFIG:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_config);
+         break;
+      case FILE_TYPE_IN_CARCHIVE:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_in_carchive);
+         break;
+      case FILE_TYPE_VIDEOFILTER:
+      case FILE_TYPE_AUDIOFILTER:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_filter);
+         break;
+      case FILE_TYPE_RDB:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_rdb);
+         break;
+      case FILE_TYPE_CURSOR:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_cursor);
+         break;
+      case FILE_TYPE_CHEAT:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_file_cheat);
+         break;
+      case MENU_SETTINGS_CHEAT_MATCH:
+#ifdef HAVE_CHEATS
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_cheat_match);
+#endif
+         break;
+      case MENU_SETTING_SUBGROUP:
+      case MENU_SETTINGS_CUSTOM_BIND_ALL:
+      case MENU_SETTINGS_CUSTOM_BIND_DEFAULT_ALL:
+      case MENU_SETTING_ACTION:
+      case MENU_SETTING_ACTION_LOADSTATE:
+      case 7:   /* Run */
+      case MENU_SETTING_ACTION_DELETE_ENTRY:
+      case MENU_SETTING_ACTION_CORE_DISK_OPTIONS:
+      case MENU_EXPLORE_TAB:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_more);
+         break;
+      case MENU_SETTINGS_CORE_DISK_OPTIONS_DISK_INDEX:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_menu_disk_index);
+         break;
+      case 31: /* Database entry */
+         BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label_db_entry);
+         break;
+      case 25: /* URL directory entries */
+      case 26: /* URL entries */
+         BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label_entry_url);
+         break;
+      case MENU_SETTING_DROPDOWN_SETTING_INT_ITEM:
+      case MENU_SETTING_DROPDOWN_SETTING_UINT_ITEM:
+      case MENU_SETTING_DROPDOWN_SETTING_FLOAT_ITEM:
+      case MENU_SETTING_DROPDOWN_ITEM:
+      case MENU_SETTING_NO_ITEM:
+         BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label_no_items);
+         break;
+      case MENU_SETTING_ACTION_CORE_LOCK:
+         BIND_ACTION_GET_VALUE(cbs,
+               menu_action_setting_disp_set_label_core_lock);
+         break;
+      case 32: /* Recent history entry */
+      case 65535: /* System info entry */
+         BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label_entry);
+         break;
+      default:
+#if 0
+         RARCH_LOG("type: %d\n", type);
+#endif
+         BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label);
+         break;
    }
 
    return 0;
@@ -2315,32 +1903,25 @@ int menu_cbs_init_bind_get_string_representation(menu_file_list_cbs_t *cbs,
    if (!cbs)
       return -1;
 
-   if (strstr(label, "joypad_index") && strstr(label, "input_player"))
+   if (  string_starts_with_size(
+            label, "input_player", STRLEN_CONST("input_player")) &&
+         string_ends_with_size(label, "joypad_index", strlen(label),
+               STRLEN_CONST("joypad_index"))
+      )
    {
       BIND_ACTION_GET_VALUE(cbs, menu_action_setting_disp_set_label);
       return 0;
    }
 
-#if 0
-   RARCH_LOG("MENU_SETTINGS_NONE: %d\n", MENU_SETTINGS_NONE);
-   RARCH_LOG("MENU_SETTINGS_LAST: %d\n", MENU_SETTINGS_LAST);
-#endif
-
    if (cbs->enum_idx != MSG_UNKNOWN)
    {
       switch (cbs->enum_idx)
       {
-         case MENU_ENUM_LABEL_CHEEVOS_UNLOCKED_ENTRY:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_cheevos_unlocked_entry);
-            return 0;
-         case MENU_ENUM_LABEL_CHEEVOS_UNLOCKED_ENTRY_HARDCORE:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_cheevos_unlocked_entry_hardcore);
-            return 0;
          case MENU_ENUM_LABEL_CHEEVOS_LOCKED_ENTRY:
+#ifdef HAVE_CHEEVOS
             BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_cheevos_locked_entry);
+                  menu_action_setting_disp_set_label_cheevos_entry);
+#endif
             return 0;
          case MENU_ENUM_LABEL_LOAD_CONTENT_HISTORY:
          case MENU_ENUM_LABEL_SYSTEM_INFORMATION:
@@ -2348,9 +1929,6 @@ int menu_cbs_init_bind_get_string_representation(menu_file_list_cbs_t *cbs,
                   menu_action_setting_disp_set_label_menu_more);
             return 0;
          case MENU_ENUM_LABEL_ACHIEVEMENT_LIST:
-            BIND_ACTION_GET_VALUE(cbs,
-                  menu_action_setting_disp_set_label_achievement_information);
-            return 0;
          case MENU_ENUM_LABEL_ACHIEVEMENT_LIST_HARDCORE:
             BIND_ACTION_GET_VALUE(cbs,
                   menu_action_setting_disp_set_label_achievement_information);
@@ -2366,9 +1944,9 @@ int menu_cbs_init_bind_get_string_representation(menu_file_list_cbs_t *cbs,
       }
    }
 
-   if (cbs->setting)
+   if (cbs->setting && !cbs->setting->get_string_representation)
    {
-      switch (setting_get_type(cbs->setting))
+      switch (cbs->setting->type)
       {
          case ST_BOOL:
             BIND_ACTION_GET_VALUE(cbs,
@@ -2387,19 +1965,15 @@ int menu_cbs_init_bind_get_string_representation(menu_file_list_cbs_t *cbs,
       }
    }
 
-   if (type >= MENU_SETTINGS_PLAYLIST_ASSOCIATION_START)
-   {
-      BIND_ACTION_GET_VALUE(cbs,
-         menu_action_setting_disp_set_label_playlist_associations);
-      return 0;
-   }
-   if (type >= MENU_SETTINGS_CORE_OPTION_START)
+   if ((type >= MENU_SETTINGS_CORE_OPTION_START) &&
+       (type < MENU_SETTINGS_CHEEVOS_START))
    {
       BIND_ACTION_GET_VALUE(cbs,
          menu_action_setting_disp_set_label_core_options);
       return 0;
    }
 
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
    if (type >= MENU_SETTINGS_SHADER_PARAMETER_0
          && type <= MENU_SETTINGS_SHADER_PARAMETER_LAST)
    {
@@ -2414,6 +1988,7 @@ int menu_cbs_init_bind_get_string_representation(menu_file_list_cbs_t *cbs,
          menu_action_setting_disp_set_label_shader_preset_parameter);
       return 0;
    }
+#endif
 
    if (menu_cbs_init_bind_get_string_representation_compare_label(cbs) == 0)
       return 0;

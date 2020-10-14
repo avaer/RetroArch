@@ -22,9 +22,7 @@
 
 #include <boolean.h>
 
-#ifndef MAX_PADS
-#define MAX_PADS 8
-#endif
+#include "../../config.def.h"
 
 #ifndef MAX_AXIS
 #define MAX_AXIS 10
@@ -42,6 +40,8 @@
 #include <android/sensor.h>
 
 #include <rthreads/rthreads.h>
+
+#include "../../config.def.h"
 
 bool test_permissions(const char *path);
 
@@ -104,7 +104,6 @@ struct android_app
     * receive user input events. */
    AInputQueue* inputQueue;
 
-
    /* When non-NULL, this is the window surface that the app can draw in. */
    ANativeWindow* window;
 
@@ -139,14 +138,16 @@ struct android_app
    /*  Below are "private" implementation of RA code. */
    bool unfocused;
    unsigned accelerometer_event_rate;
+   unsigned gyroscope_event_rate;
    ASensorManager *sensorManager;
    ASensorEventQueue *sensorEventQueue;
    const ASensor* accelerometerSensor;
+   const ASensor* gyroscopeSensor;
    uint64_t sensor_state_mask;
    char current_ime[PATH_MAX_LENGTH];
    bool input_alive;
-   int16_t analog_state[MAX_PADS][MAX_AXIS];
-   int8_t hat_state[MAX_PADS][2];
+   int16_t analog_state[DEFAULT_MAX_PADS][MAX_AXIS];
+   int8_t hat_state[DEFAULT_MAX_PADS][2];
    jmethodID getIntent;
    jmethodID onRetroArchExit;
    jmethodID getStringExtra;
@@ -163,8 +164,26 @@ struct android_app
    jmethodID getPowerstate;
    jmethodID getBatteryLevel;
    jmethodID setSustainedPerformanceMode;
-};
+   jmethodID setScreenOrientation;
+   jmethodID getUserLanguageString;
+   jmethodID doVibrate;
 
+   jmethodID isPlayStoreBuild;
+   jmethodID getAvailableCores;
+   jmethodID getInstalledCores;
+   jmethodID downloadCore;
+   jmethodID deleteCore;
+
+   struct
+   {
+      unsigned width, height;
+      bool changed;
+   } content_rect;
+   uint16_t rumble_last_strength_strong[MAX_USERS];
+   uint16_t rumble_last_strength_weak[MAX_USERS];
+   uint16_t rumble_last_strength[MAX_USERS];
+   int id[MAX_USERS];
+};
 
 enum
 {
@@ -267,7 +286,9 @@ enum
     */
    APP_CMD_DESTROY,
 
-   APP_CMD_REINIT_DONE
+   APP_CMD_REINIT_DONE,
+
+   APP_CMD_VIBRATE_KEYPRESS
 };
 
 #define JNI_EXCEPTION(env) \
@@ -336,6 +357,8 @@ enum
 extern JNIEnv *jni_thread_getenv(void);
 
 void android_app_write_cmd(struct android_app *android_app, int8_t cmd);
+
+void android_dpi_get_density(char *s, size_t len);
 
 extern struct android_app *g_android;
 #endif

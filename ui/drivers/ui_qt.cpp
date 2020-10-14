@@ -1,6 +1,6 @@
 /* RetroArch - A frontend for libretro.
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- *  Copyright (C) 2018 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  * RetroArch is free software: you can redistribute it and/or modify it under the terms
  * of the GNU General Public License as published by the Free Software Found-
@@ -14,23 +14,29 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef CXX_BUILD
 extern "C" {
+#endif
+
 #include <file/file_path.h>
+#include <string/stdstring.h>
 
 #ifdef HAVE_CONFIG_H
 #include "../../config.h"
 #endif
 
 #include "../ui_companion_driver.h"
-#include "../../core.h"
 #include "../../configuration.h"
-#include "../../retroarch.h"
 #include "../../verbosity.h"
 #include "../../msg_hash.h"
 #include "../../tasks/tasks_internal.h"
+
+#ifndef CXX_BUILD
 }
+#endif
 
 #include "ui_qt.h"
+#include "qt/viewoptionsdialog.h"
 
 #include <QApplication>
 #include <QtWidgets>
@@ -47,40 +53,71 @@ extern "C" {
 #define GROUPED_DRAGGING static_cast<QMainWindow::DockOption>(0)
 #endif
 
-static bool already_started = false;
-
 typedef struct ui_companion_qt
 {
    ui_application_qt_t *app;
    ui_window_qt_t *window;
 } ui_companion_qt_t;
 
-ThumbnailWidget::ThumbnailWidget(QWidget *parent) :
-   QWidget(parent)
+ThumbnailWidget::ThumbnailWidget(ThumbnailType type, QWidget *parent) :
+   QStackedWidget(parent)
+   ,m_thumbnailType(type)
+   ,m_thumbnailLabel(new ThumbnailLabel(this))
+   ,m_dropIndicator(new QLabel(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_DROP_IMAGE_HERE), this))
 {
+   m_dropIndicator->setObjectName("dropIndicator");
+   m_dropIndicator->setAlignment(Qt::AlignCenter);
+   addWidget(m_dropIndicator);
+   addWidget(m_thumbnailLabel);
 }
 
-void ThumbnailWidget::paintEvent(QPaintEvent *event)
+void ThumbnailWidget::setPixmap(const QPixmap &pixmap, bool acceptDrops)
 {
-  QStyleOption o;
-  QPainter p;
-  o.initFrom(this);
-  p.begin(this);
-  style()->drawPrimitive(
-    QStyle::PE_Widget, &o, &p, this);
-  p.end();
+   m_thumbnailLabel->setPixmap(pixmap);
 
-  QWidget::paintEvent(event);
+   if (acceptDrops && pixmap.isNull())
+      setCurrentWidget(m_dropIndicator);
+   else
+      setCurrentWidget(m_thumbnailLabel);
+
+   m_thumbnailLabel->update();
+
+   QWidget::setAcceptDrops(acceptDrops);
 }
 
-void ThumbnailWidget::resizeEvent(QResizeEvent *event)
+void ThumbnailWidget::dragEnterEvent(QDragEnterEvent *event)
 {
-   QWidget::resizeEvent(event);
+   const QMimeData *data = event->mimeData();
+
+   if (data->hasUrls())
+      event->acceptProposedAction();
 }
 
-QSize ThumbnailWidget::sizeHint() const
+/* Workaround for QTBUG-72844. Without it, you can't 
+ * drop on this if you first drag over another 
+ * widget that doesn't accept drops. */
+void ThumbnailWidget::dragMoveEvent(QDragMoveEvent *event)
 {
-   return QSize(256, 256);
+   event->acceptProposedAction();
+}
+
+void ThumbnailWidget::dropEvent(QDropEvent *event)
+{
+   const QMimeData *data = event->mimeData();
+
+   if (data->hasUrls())
+   {
+      const QString imageString = data->urls().at(0).toLocalFile();
+      const QImage image(imageString);
+
+      if (!image.isNull())
+         emit(filesDropped(image, m_thumbnailType));
+      else
+      {
+         const char *string_data = QDir::toNativeSeparators(imageString).toUtf8().constData();
+         RARCH_ERR("[Qt]: Could not read image: %s\n", string_data);
+      }
+   }
 }
 
 ThumbnailLabel::ThumbnailLabel(QWidget *parent) :
@@ -115,10 +152,10 @@ QSize ThumbnailLabel::sizeHint() const
 
 void ThumbnailLabel::paintEvent(QPaintEvent *event)
 {
-   int w = width();
-   int h = height();
    QStyleOption o;
    QPainter p;
+   int w = width();
+   int h = height();
 
    event->accept();
 
@@ -130,6 +167,8 @@ void ThumbnailLabel::paintEvent(QPaintEvent *event)
 
    if (!m_pixmap || m_pixmap->isNull())
    {
+      if (m_pixmap)
+         delete m_pixmap;
       m_pixmap = new QPixmap(sizeHint());
       m_pixmap->fill(QColor(0, 0, 0, 0));
    }
@@ -192,58 +231,74 @@ static void ui_companion_qt_deinit(void *data)
 
 static void* ui_companion_qt_init(void)
 {
-   ui_companion_qt_t *handle = (ui_companion_qt_t*)calloc(1, sizeof(*handle));
-   MainWindow *mainwindow = NULL;
-   QHBoxLayout *browserButtonsHBoxLayout = NULL;
-   QVBoxLayout *layout = NULL;
-   QVBoxLayout *launchWithWidgetLayout = NULL;
-   QHBoxLayout *coreComboBoxLayout = NULL;
-   QMenuBar *menu = NULL;
-   QDesktopWidget *desktop = NULL;
-   QMenu *fileMenu = NULL;
-   QMenu *editMenu = NULL;
-   QMenu *viewMenu = NULL;
-   QMenu *viewClosedDocksMenu = NULL;
+   int i = 0;
+   QString initialPlaylist;
    QRect desktopRect;
-   QDockWidget *thumbnailDock = NULL;
-   QDockWidget *thumbnail2Dock = NULL;
-   QDockWidget *thumbnail3Dock = NULL;
-   QDockWidget *browserAndPlaylistTabDock = NULL;
-   QDockWidget *coreSelectionDock = NULL;
+   ui_companion_qt_t               *handle = (ui_companion_qt_t*)
+      calloc(1, sizeof(*handle));
+   MainWindow                  *mainwindow = NULL;
+   QHBoxLayout   *browserButtonsHBoxLayout = NULL;
+   QVBoxLayout                     *layout = NULL;
+   QVBoxLayout     *launchWithWidgetLayout = NULL;
+   QHBoxLayout         *coreComboBoxLayout = NULL;
+   QMenuBar                          *menu = NULL;
+   QDesktopWidget                 *desktop = NULL;
+   QMenu                         *fileMenu = NULL;
+   QMenu                         *editMenu = NULL;
+   QMenu                         *viewMenu = NULL;
+   QMenu              *viewClosedDocksMenu = NULL;
+#ifdef Q_OS_WIN
+#ifdef HAVE_ONLINE_UPDATER
+   QMenu                        *toolsMenu = NULL;
+   QMenu                      *updaterMenu = NULL;
+#endif
+#endif
+   QMenu                         *helpMenu = NULL;
+   QDockWidget              *thumbnailDock = NULL;
+   QDockWidget             *thumbnail2Dock = NULL;
+   QDockWidget             *thumbnail3Dock = NULL;
+   QDockWidget  *browserAndPlaylistTabDock = NULL;
+   QDockWidget          *coreSelectionDock = NULL;
    QTabWidget *browserAndPlaylistTabWidget = NULL;
-   QWidget *widget = NULL;
-   QWidget *browserWidget = NULL;
-   QWidget *playlistWidget = NULL;
-   QWidget *coreSelectionWidget = NULL;
-   QWidget *launchWithWidget = NULL;
-   ThumbnailWidget *thumbnailWidget = NULL;
-   ThumbnailWidget *thumbnail2Widget = NULL;
-   ThumbnailWidget *thumbnail3Widget = NULL;
-   QPushButton *browserDownloadsButton = NULL;
-   QPushButton *browserUpButton = NULL;
-   QPushButton *browserStartButton = NULL;
-   ThumbnailLabel *thumbnail = NULL;
-   ThumbnailLabel *thumbnail2 = NULL;
-   ThumbnailLabel *thumbnail3 = NULL;
-   QAction *editSearchAction = NULL;
-   QAction *loadCoreAction = NULL;
-   QAction *unloadCoreAction = NULL;
-   QAction *exitAction = NULL;
-   QComboBox *launchWithComboBox = NULL;
-   QSettings *qsettings = NULL;
+   QStackedWidget           *centralWidget = NULL;
+   QStackedWidget                  *widget = NULL;
+   QFrame                   *browserWidget = NULL;
+   QFrame                  *playlistWidget = NULL;
+   QWidget            *coreSelectionWidget = NULL;
+   QWidget               *launchWithWidget = NULL;
+   ThumbnailWidget        *thumbnailWidget = NULL;
+   ThumbnailWidget       *thumbnail2Widget = NULL;
+   ThumbnailWidget       *thumbnail3Widget = NULL;
+   QPushButton     *browserDownloadsButton = NULL;
+   QPushButton            *browserUpButton = NULL;
+   QPushButton         *browserStartButton = NULL;
+   ThumbnailLabel               *thumbnail = NULL;
+   ThumbnailLabel              *thumbnail2 = NULL;
+   ThumbnailLabel              *thumbnail3 = NULL;
+   QAction               *editSearchAction = NULL;
+   QAction                 *loadCoreAction = NULL;
+   QAction               *unloadCoreAction = NULL;
+   QAction                     *exitAction = NULL;
+   QComboBox           *launchWithComboBox = NULL;
+   QSettings                    *qsettings = NULL;
+   QListWidget                 *listWidget = NULL;
+   bool                      foundPlaylist = false;
 
    if (!handle)
       return NULL;
 
-   handle->app = static_cast<ui_application_qt_t*>(ui_application_qt.initialize());
-   handle->window = static_cast<ui_window_qt_t*>(ui_window_qt.init());
+   handle->app     = static_cast<ui_application_qt_t*>
+      (ui_application_qt.initialize());
+   handle->window  = static_cast<ui_window_qt_t*>(ui_window_qt.init());
 
-   desktop = qApp->desktop();
-   desktopRect = desktop->availableGeometry();
+   desktop         = qApp->desktop();
+   desktopRect     = desktop->availableGeometry();
 
-   mainwindow = handle->window->qtWindow;
+   mainwindow      = handle->window->qtWindow;
 
-   qsettings = mainwindow->settings();
+   qsettings       = mainwindow->settings();
+
+   initialPlaylist = qsettings->value("initial_playlist", mainwindow->getSpecialPlaylistPath(SPECIAL_PLAYLIST_HISTORY)).toString();
 
    mainwindow->resize(qMin(desktopRect.width(), INITIAL_WIDTH), qMin(desktopRect.height(), INITIAL_HEIGHT));
    mainwindow->setGeometry(QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter, mainwindow->size(), desktopRect));
@@ -251,15 +306,22 @@ static void* ui_companion_qt_init(void)
    mainwindow->setWindowTitle("RetroArch");
    mainwindow->setDockOptions(QMainWindow::AnimatedDocks | QMainWindow::AllowNestedDocks | QMainWindow::AllowTabbedDocks | GROUPED_DRAGGING);
 
-   widget = new QWidget(mainwindow);
-   widget->setObjectName("tableWidget");
+   listWidget      = mainwindow->playlistListWidget();
 
-   layout = new QVBoxLayout();
-   layout->addWidget(mainwindow->contentTableWidget());
+   widget          = mainwindow->playlistViews();
+   widget->setContextMenuPolicy(Qt::CustomContextMenu);
 
-   widget->setLayout(layout);
+   QObject::connect(widget, SIGNAL(filesDropped(QStringList)), mainwindow, SLOT(onPlaylistFilesDropped(QStringList)));
+   QObject::connect(widget, SIGNAL(enterPressed()), mainwindow, SLOT(onDropWidgetEnterPressed()));
+   QObject::connect(widget, SIGNAL(deletePressed()), mainwindow, SLOT(deleteCurrentPlaylistItem()));
+   QObject::connect(widget, SIGNAL(customContextMenuRequested(const QPoint&)), mainwindow, SLOT(onFileDropWidgetContextMenuRequested(const QPoint&)));
 
-   mainwindow->setCentralWidget(widget);
+   centralWidget = mainwindow->centralWidget();
+
+   centralWidget->addWidget(mainwindow->playlistViewsAndFooter());
+   centralWidget->addWidget(mainwindow->fileTableView());
+
+   mainwindow->setCentralWidget(centralWidget);
 
    menu = mainwindow->menuBar();
 
@@ -286,17 +348,40 @@ static void* ui_companion_qt_init(void)
 
    QObject::connect(viewClosedDocksMenu, SIGNAL(aboutToShow()), mainwindow, SLOT(onViewClosedDocksAboutToShow()));
 
+   viewMenu->addAction(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_CORE_OPTIONS), mainwindow, SLOT(onCoreOptionsClicked()));
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
+   viewMenu->addAction(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SHADER_OPTIONS), mainwindow, SLOT(onShaderParamsClicked()));
+#endif
+
+   viewMenu->addSeparator();
+   viewMenu->addAction(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_VIEW_TYPE_ICONS), mainwindow, SLOT(onIconViewClicked()));
+   viewMenu->addAction(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_VIEW_TYPE_LIST), mainwindow, SLOT(onListViewClicked()));
+   viewMenu->addSeparator();
    viewMenu->addAction(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_MENU_VIEW_OPTIONS), mainwindow->viewOptionsDialog(), SLOT(showDialog()));
 
-   playlistWidget = new QWidget();
+#ifdef Q_OS_WIN
+#ifdef HAVE_ONLINE_UPDATER
+   toolsMenu = menu->addMenu(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_MENU_TOOLS));
+   updaterMenu = toolsMenu->addMenu(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_ONLINE_UPDATER));
+   updaterMenu->addAction(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_UPDATE_RETROARCH_NIGHTLY), mainwindow, SLOT(updateRetroArchNightly()));
+#endif
+#endif
+   helpMenu = menu->addMenu(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_MENU_HELP));
+   helpMenu->addAction(QString(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_MENU_HELP_DOCUMENTATION)), mainwindow, SLOT(showDocs()));
+   helpMenu->addAction(QString(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_MENU_HELP_ABOUT)) + "...", mainwindow, SLOT(showAbout()));
+   helpMenu->addAction("About Qt...", qApp, SLOT(aboutQt()));
+
+   playlistWidget = new QFrame();
    playlistWidget->setLayout(new QVBoxLayout());
    playlistWidget->setObjectName("playlistWidget");
+   playlistWidget->layout()->setContentsMargins(0, 0, 0, 0);
 
    playlistWidget->layout()->addWidget(mainwindow->playlistListWidget());
 
-   browserWidget = new QWidget();
+   browserWidget = new QFrame();
    browserWidget->setLayout(new QVBoxLayout());
    browserWidget->setObjectName("browserWidget");
+   browserWidget->layout()->setContentsMargins(0, 0, 0, 0);
 
    browserDownloadsButton = new QPushButton(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CORE_ASSETS_DIRECTORY));
    browserUpButton = new QPushButton(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_TAB_FILE_BROWSER_UP));
@@ -335,38 +420,18 @@ static void* ui_companion_qt_init(void)
 
    browserButtonsHBoxLayout->addItem(new QSpacerItem(browserAndPlaylistTabWidget->tabBar()->width(), 20, QSizePolicy::Expanding, QSizePolicy::Minimum));
 
-   thumbnailWidget = new ThumbnailWidget();
-   thumbnail2Widget = new ThumbnailWidget();
-   thumbnail3Widget = new ThumbnailWidget();
+   thumbnailWidget = new ThumbnailWidget(THUMBNAIL_TYPE_BOXART);
+   thumbnailWidget->setObjectName("thumbnail");
 
-   thumbnailWidget->setLayout(new QVBoxLayout());
-   thumbnail2Widget->setLayout(new QVBoxLayout());
-   thumbnail3Widget->setLayout(new QVBoxLayout());
+   thumbnail2Widget = new ThumbnailWidget(THUMBNAIL_TYPE_TITLE_SCREEN);
+   thumbnail2Widget->setObjectName("thumbnail2");
 
-   thumbnailWidget->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding));
-   thumbnail2Widget->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding));
-   thumbnail3Widget->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding));
+   thumbnail3Widget = new ThumbnailWidget(THUMBNAIL_TYPE_SCREENSHOT);
+   thumbnail3Widget->setObjectName("thumbnail3");
 
-   thumbnail = new ThumbnailLabel();
-   thumbnail->setObjectName("thumbnail");
-
-   thumbnail2 = new ThumbnailLabel();
-   thumbnail2->setObjectName("thumbnail2");
-
-   thumbnail3 = new ThumbnailLabel();
-   thumbnail3->setObjectName("thumbnail3");
-
-   thumbnail->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding));
-   thumbnail2->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding));
-   thumbnail3->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding));
-
-   QObject::connect(mainwindow, SIGNAL(thumbnailChanged(const QPixmap&)), thumbnail, SLOT(setPixmap(const QPixmap&)));
-   QObject::connect(mainwindow, SIGNAL(thumbnail2Changed(const QPixmap&)), thumbnail2, SLOT(setPixmap(const QPixmap&)));
-   QObject::connect(mainwindow, SIGNAL(thumbnail3Changed(const QPixmap&)), thumbnail3, SLOT(setPixmap(const QPixmap&)));
-
-   thumbnailWidget->layout()->addWidget(thumbnail);
-   thumbnail2Widget->layout()->addWidget(thumbnail2);
-   thumbnail3Widget->layout()->addWidget(thumbnail3);
+   QObject::connect(thumbnailWidget, SIGNAL(filesDropped(const QImage&, ThumbnailType)), mainwindow, SLOT(onThumbnailDropped(const QImage&, ThumbnailType)));
+   QObject::connect(thumbnail2Widget, SIGNAL(filesDropped(const QImage&, ThumbnailType)), mainwindow, SLOT(onThumbnailDropped(const QImage&, ThumbnailType)));
+   QObject::connect(thumbnail3Widget, SIGNAL(filesDropped(const QImage&, ThumbnailType)), mainwindow, SLOT(onThumbnailDropped(const QImage&, ThumbnailType)));
 
    thumbnailDock = new QDockWidget(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_THUMBNAIL_BOXART), mainwindow);
    thumbnailDock->setObjectName("thumbnailDock");
@@ -435,6 +500,7 @@ static void* ui_companion_qt_init(void)
    coreSelectionDock->setProperty("default_area", Qt::LeftDockWidgetArea);
    coreSelectionDock->setProperty("menu_text", msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_CORE));
    coreSelectionDock->setWidget(coreSelectionWidget);
+   coreSelectionDock->setFixedHeight(coreSelectionDock->minimumSizeHint().height());
 
    mainwindow->addDockWidget(static_cast<Qt::DockWidgetArea>(coreSelectionDock->property("default_area").toInt()), coreSelectionDock);
 
@@ -444,27 +510,35 @@ static void* ui_companion_qt_init(void)
    mainwindow->resizeDocks(QList<QDockWidget*>() << coreSelectionDock, QList<int>() << 1, Qt::Vertical);
 #endif
 
-   /* this should come last */
-   mainwindow->resizeThumbnails(true, true, true);
+   if (qsettings->contains("all_playlists_list_max_count"))
+      mainwindow->setAllPlaylistsListMaxCount(qsettings->value("all_playlists_list_max_count", 0).toInt());
+
+   if (qsettings->contains("all_playlists_grid_max_count"))
+      mainwindow->setAllPlaylistsGridMaxCount(qsettings->value("all_playlists_grid_max_count", 5000).toInt());
+
+   if (qsettings->contains("thumbnail_cache_limit"))
+      mainwindow->setThumbnailCacheLimit(qsettings->value("thumbnail_cache_limit", 500).toInt());
+   else
+      mainwindow->setThumbnailCacheLimit(500);
 
    if (qsettings->contains("geometry"))
       if (qsettings->contains("save_geometry"))
          mainwindow->restoreGeometry(qsettings->value("geometry").toByteArray());
 
+   if (qsettings->contains("options_dialog_geometry"))
+      mainwindow->viewOptionsDialog()->restoreGeometry(qsettings->value("options_dialog_geometry").toByteArray());
+
    if (qsettings->contains("save_dock_positions"))
       if (qsettings->contains("dock_positions"))
          mainwindow->restoreState(qsettings->value("dock_positions").toByteArray());
 
-   if (qsettings->contains("save_last_tab"))
-   {
-      if (qsettings->contains("last_tab"))
-      {
-         int lastTabIndex = qsettings->value("last_tab", 0).toInt();
+   if (qsettings->contains("file_browser_table_headers"))
+      mainwindow->fileTableView()->horizontalHeader()->restoreState(qsettings->value("file_browser_table_headers").toByteArray());
+   else
+      mainwindow->fileTableView()->horizontalHeader()->resizeSection(0, 300);
 
-         if (lastTabIndex >= 0 && browserAndPlaylistTabWidget->count() > lastTabIndex)
-            browserAndPlaylistTabWidget->setCurrentIndex(lastTabIndex);
-      }
-   }
+   if (qsettings->contains("icon_view_zoom"))
+      mainwindow->setIconViewZoom(qsettings->value("icon_view_zoom", 50).toInt());
 
    if (qsettings->contains("theme"))
    {
@@ -483,69 +557,158 @@ static void* ui_companion_qt_init(void)
    else
       mainwindow->setTheme();
 
+   if (qsettings->contains("view_type"))
+   {
+      QString viewType = qsettings->value("view_type", "list").toString();
+
+      if (viewType == "list")
+         mainwindow->setCurrentViewType(MainWindow::VIEW_TYPE_LIST);
+      else if (viewType == "icons")
+         mainwindow->setCurrentViewType(MainWindow::VIEW_TYPE_ICONS);
+      else
+         mainwindow->setCurrentViewType(MainWindow::VIEW_TYPE_LIST);
+   }
+   else
+      mainwindow->setCurrentViewType(MainWindow::VIEW_TYPE_LIST);
+
+   if (qsettings->contains("icon_view_thumbnail_type"))
+   {
+      QString thumbnailType = qsettings->value("icon_view_thumbnail_type", "boxart").toString();
+
+      if (thumbnailType == "boxart")
+         mainwindow->setCurrentThumbnailType(THUMBNAIL_TYPE_BOXART);
+      else if (thumbnailType == "screenshot")
+         mainwindow->setCurrentThumbnailType(THUMBNAIL_TYPE_SCREENSHOT);
+      else if (thumbnailType == "title")
+         mainwindow->setCurrentThumbnailType(THUMBNAIL_TYPE_TITLE_SCREEN);
+      else
+         mainwindow->setCurrentThumbnailType(THUMBNAIL_TYPE_BOXART);
+   }
+
+   /* We make sure to hook up the tab widget callback only after the tabs themselves have been added,
+    * but before changing to a specific one, to avoid the callback firing before the view type is set.
+    */
+   QObject::connect(browserAndPlaylistTabWidget, SIGNAL(currentChanged(int)), mainwindow, SLOT(onTabWidgetIndexChanged(int)));
+
+   /* setting the last tab must come after setting the view type */
+   if (qsettings->contains("save_last_tab"))
+   {
+      int lastTabIndex = qsettings->value("last_tab", 0).toInt();
+
+      if (lastTabIndex >= 0 && browserAndPlaylistTabWidget->count() > lastTabIndex)
+      {
+         browserAndPlaylistTabWidget->setCurrentIndex(lastTabIndex);
+         mainwindow->onTabWidgetIndexChanged(lastTabIndex);
+      }
+   }
+   else
+   {
+      browserAndPlaylistTabWidget->setCurrentIndex(0);
+      mainwindow->onTabWidgetIndexChanged(0);
+   }
+
+   /* the initial playlist that is selected is based on the user's setting (initialPlaylist) */
+   for (i = 0; listWidget->count() && i < listWidget->count(); i++)
+   {
+      QString path;
+      QListWidgetItem *item = listWidget->item(i);
+
+      if (!item)
+         continue;
+
+      path = item->data(Qt::UserRole).toString();
+
+      if (path == initialPlaylist)
+      {
+         foundPlaylist = true;
+         listWidget->setRowHidden(i, false);
+         listWidget->setCurrentRow(i);
+         break;
+      }
+   }
+
+   /* couldn't find the user's initial playlist, just find anything */
+   if (!foundPlaylist)
+   {
+      for (i = 0; listWidget->count() && i < listWidget->count(); i++)
+      {
+         /* select the first non-hidden row */
+         if (!listWidget->isRowHidden(i))
+         {
+            listWidget->setCurrentRow(i);
+            break;
+         }
+      }
+   }
+
+   mainwindow->initContentTableWidget();
+
    return handle;
 }
 
-static int ui_companion_qt_iterate(void *data, unsigned action)
-{
-   (void)data;
-   (void)action;
-   return 0;
-}
-
-static void ui_companion_qt_notify_content_loaded(void *data)
-{
-   (void)data;
-}
+static void ui_companion_qt_notify_content_loaded(void *data) { }
 
 static void ui_companion_qt_toggle(void *data, bool force)
 {
-   ui_companion_qt_t *handle = (ui_companion_qt_t*)data;
-   ui_window_qt_t *win_handle = (ui_window_qt_t*)handle->window;
-   settings_t *settings = config_get_ptr();
+   static bool already_started = false;
+   ui_companion_qt_t *handle   = (ui_companion_qt_t*)data;
+   ui_window_qt_t *win_handle  = (ui_window_qt_t*)handle->window;
+   settings_t *settings        = config_get_ptr();
+   bool ui_companion_toggle    = settings->bools.ui_companion_toggle;
+   bool video_fullscreen       = settings->bools.video_fullscreen;
 
-#ifdef HAVE_DYNAMIC
-   if (!retroarch_core_set_on_cmdline())
-#endif
-      if (settings->bools.ui_companion_toggle || force)
+   if (ui_companion_toggle || force)
+   {
+      if (video_fullscreen)
+         command_event(CMD_EVENT_FULLSCREEN_TOGGLE, NULL);
+
+      win_handle->qtWindow->activateWindow();
+      win_handle->qtWindow->raise();
+      video_driver_show_mouse();
+      win_handle->qtWindow->show();
+
+      if (video_driver_started_fullscreen())
+         win_handle->qtWindow->lower();
+
+      if (!already_started)
       {
-         video_driver_show_mouse();
-         win_handle->qtWindow->show();
+         already_started = true;
 
-         if (video_driver_started_fullscreen())
-            win_handle->qtWindow->lower();
-
-         if (!already_started)
-         {
-            already_started = true;
-
-            if (win_handle->qtWindow->settings()->value("show_welcome_screen", true).toBool())
-               win_handle->qtWindow->showWelcomeScreen();
-         }
+         if (win_handle->qtWindow->settings()->value(
+                  "show_welcome_screen", true).toBool())
+            win_handle->qtWindow->showWelcomeScreen();
       }
+   }
 }
 
 static void ui_companion_qt_event_command(void *data, enum event_command cmd)
 {
-   ui_companion_qt_t *handle = (ui_companion_qt_t*)data;
-
-   (void)cmd;
+   ui_companion_qt_t *handle  = (ui_companion_qt_t*)data;
+   ui_window_qt_t *win_handle = (ui_window_qt_t*)handle->window;
 
    if (!handle)
       return;
+
+   switch (cmd)
+   {
+      case CMD_EVENT_SHADERS_APPLY_CHANGES:
+      case CMD_EVENT_SHADER_PRESET_LOADED:
+#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
+         RARCH_LOG("[Qt]: Reloading shader parameters.\n");
+         win_handle->qtWindow->deferReloadShaderParams();
+#endif
+         break;
+      default:
+         break;
+   }
 }
 
 static void ui_companion_qt_notify_list_pushed(void *data, file_list_t *list,
-   file_list_t *menu_list)
-{
-   (void)data;
-   (void)list;
-   (void)menu_list;
-}
+   file_list_t *menu_list) { }
 
 static void ui_companion_qt_notify_refresh(void *data)
 {
-   ui_companion_qt_t *handle = (ui_companion_qt_t*)data;
+   ui_companion_qt_t *handle  = (ui_companion_qt_t*)data;
    ui_window_qt_t *win_handle = (ui_window_qt_t*)handle->window;
 
    win_handle->qtWindow->deferReloadPlaylists();
@@ -553,21 +716,30 @@ static void ui_companion_qt_notify_refresh(void *data)
 
 static void ui_companion_qt_log_msg(void *data, const char *msg)
 {
-   ui_companion_qt_t *handle = (ui_companion_qt_t*)data;
+   ui_companion_qt_t *handle  = (ui_companion_qt_t*)data;
    ui_window_qt_t *win_handle = (ui_window_qt_t*)handle->window;
 
    win_handle->qtWindow->appendLogMessage(msg);
 }
 
-void ui_companion_qt_msg_queue_push(void *data, const char *msg, unsigned priority, unsigned duration, bool flush)
+static bool ui_companion_qt_is_active(void *data)
 {
-   ui_companion_qt_t *handle = (ui_companion_qt_t*)data;
+   ui_companion_qt_t *handle  = (ui_companion_qt_t*)data;
+   ui_window_qt_t *win_handle = (ui_window_qt_t*)handle->window;
+
+   return win_handle->qtWindow->isVisible();
+}
+
+void ui_companion_qt_msg_queue_push(void *data,
+      const char *msg, unsigned priority, unsigned duration, bool flush)
+{
+   ui_companion_qt_t *handle  = (ui_companion_qt_t*)data;
    ui_window_qt_t *win_handle = NULL;
 
    if (!handle)
       return;
 
-   win_handle = (ui_window_qt_t*)handle->window;
+   win_handle                 = (ui_window_qt_t*)handle->window;
 
    if (win_handle)
       win_handle->qtWindow->showStatusMessage(msg, priority, duration, flush);
@@ -576,7 +748,6 @@ void ui_companion_qt_msg_queue_push(void *data, const char *msg, unsigned priori
 ui_companion_driver_t ui_companion_qt = {
    ui_companion_qt_init,
    ui_companion_qt_deinit,
-   ui_companion_qt_iterate,
    ui_companion_qt_toggle,
    ui_companion_qt_event_command,
    ui_companion_qt_notify_content_loaded,
@@ -586,6 +757,7 @@ ui_companion_driver_t ui_companion_qt = {
    NULL,
    NULL,
    ui_companion_qt_log_msg,
+   ui_companion_qt_is_active,
    &ui_browser_window_qt,
    &ui_msg_window_qt,
    &ui_window_qt,

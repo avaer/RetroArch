@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2011-2016 - Daniel De Matteis
  *  Copyright (C) 2015-2017 - Andre Leiradella
- *  Copyright (C) 2016-2017 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -22,7 +22,8 @@
 
 #include "net_http_special.h"
 
-int net_http_get(const char **result, size_t *size, const char *url, retro_time_t *timeout)
+int net_http_get(const char **result, size_t *size,
+      const char *url, retro_time_t *timeout)
 {
    size_t length;
    uint8_t* data                  = NULL;
@@ -74,7 +75,7 @@ int net_http_get(const char **result, size_t *size, const char *url, retro_time_
       res = (char*)malloc(length + 1);
 
       /* Allocation error. */
-      if ( !res )
+      if (!res)
          goto error;
 
       memcpy((void*)res, (void*)data, length);
@@ -92,11 +93,11 @@ int net_http_get(const char **result, size_t *size, const char *url, retro_time_
       *size = length;
 
 error:
-   if ( http )
-      net_http_delete( http );
+   if (http)
+      net_http_delete(http);
 
-   if ( conn )
-      net_http_connection_free( conn );
+   if (conn)
+      net_http_connection_free(conn);
 
    if (timeout)
    {

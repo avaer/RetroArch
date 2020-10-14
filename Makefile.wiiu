@@ -1,4 +1,4 @@
-TARGET		    := retroarch_wiiu
+TARGET := retroarch_wiiu
 
 BUILD_HBL_ELF              = 1
 BUILD_RPX                  = 1
@@ -10,7 +10,7 @@ WIIU_HID                   = 1
 HAVE_RUNAHEAD              = 1
 WIIU_LOG_RPX               = 0
 BUILD_DIR                  = objs/wiiu
-PC_DEVELOPMENT_TCP_PORT	   ?=
+PC_DEVELOPMENT_TCP_PORT    ?=
 
 ifeq ($(SALAMANDER_BUILD),1)
    BUILD_DIR := $(BUILD_DIR)-salamander
@@ -27,7 +27,13 @@ ifneq ($(V), 1)
    Q := @
 endif
 
+DEFINES :=
 OBJ :=
+INCDIRS :=
+
+#-----------------------------
+# Features and object files
+
 OBJ += wiiu/main.o
 OBJ += wiiu/system/memory.o
 OBJ += wiiu/system/atomic.o
@@ -37,23 +43,9 @@ OBJ += wiiu/fs/sd_fat_devoptab.o
 OBJ += wiiu/fs/fs_utils.o
 OBJ += wiiu/hbl.o
 
-DEFINES :=
-
-ifeq ($(WIIU_LOG_RPX),1)
-   defines += -DWIIU_LOG_RPX
-endif
-
-ifeq ($(WIIU_HID),1)
-   DEFINES += -DWIIU_HID
-   OBJ += input/drivers_joypad/wiiu/hidpad_driver.o
-   OBJ += input/drivers_hid/wiiu_hid.o
-   OBJ += input/connect/joypad_connection.o \
-          input/common/hid/hid_device_driver.o \
-          input/common/hid/device_wiiu_gca.o \
-          input/common/hid/device_ds3.o \
-          input/common/hid/device_ds4.o \
-          input/common/hid/device_null.o
-endif
+RPX_OBJ = $(BUILD_DIR)/wiiu/system/stubs_rpl.o
+HBL_ELF_OBJ = $(BUILD_DIR)/wiiu/system/dynamic.o \
+              $(BUILD_DIR)/wiiu/system/stubs_elf.o
 
 ifeq ($(SALAMANDER_BUILD),1)
    DEFINES += -DRARCH_CONSOLE -DIS_SALAMANDER
@@ -61,10 +53,11 @@ ifeq ($(SALAMANDER_BUILD),1)
    OBJ += frontend/frontend_salamander.o
    OBJ += frontend/frontend_driver.o
    OBJ += frontend/drivers/platform_wiiu.o
-   OBJ += frontend/drivers/platform_null.o
    OBJ += libretro-common/encodings/encoding_utf.o
    OBJ += libretro-common/compat/compat_strcasestr.o
+   OBJ += libretro-common/compat/fopen_utf8.o
    OBJ += libretro-common/file/file_path.o
+   OBJ += libretro-common/file/file_path_io.o
    OBJ += libretro-common/string/stdstring.o
    OBJ += libretro-common/lists/string_list.o
    OBJ += libretro-common/lists/dir_list.o
@@ -74,18 +67,23 @@ ifeq ($(SALAMANDER_BUILD),1)
    OBJ += libretro-common/streams/file_stream.o
    OBJ += libretro-common/vfs/vfs_implementation.o
    OBJ += libretro-common/hash/rhash.o
-   OBJ += file_path_str.o
+   OBJ += libretro-common/time/rtime.o
    OBJ += verbosity.o
+
+# $(SALAMANDER_BUILD),0
 else
    DEFINES += -DRARCH_INTERNAL
+   DEFINES += -DHAVE_SCREENSHOTS
    DEFINES += -DHAVE_KEYMAPPER
+   DEFINES += -DHAVE_ONLINE_UPDATER
    DEFINES += -DHAVE_UPDATE_ASSETS
+   DEFINES += -DHAVE_UPDATE_CORES
    DEFINES += -DHAVE_FILTERS_BUILTIN
    DEFINES += -DHAVE_SLANG
    DEFINES += -DHAVE_SHADERPIPELINE
 
 ifeq ($(HAVE_RUNAHEAD),1)
-	DEFINES += -DHAVE_RUNAHEAD
+   DEFINES += -DHAVE_RUNAHEAD
 endif
 
    OBJ += wiiu/shader_utils.o
@@ -98,73 +96,149 @@ endif
    OBJ += gfx/drivers/gx2_shaders/snow.o
    OBJ += gfx/drivers/gx2_shaders/snow_simple.o
    OBJ += gfx/drivers/gx2_shaders/snowflake.o
-   OBJ += gfx/drivers_shader/slang_preprocess.o
-   OBJ += gfx/drivers_shader/glslang_util.o
 
    ifeq ($(GRIFFIN_BUILD), 1)
-   	OBJ += griffin/griffin.o
-   	DEFINES += -DHAVE_GRIFFIN=1 -DHAVE_MENU -DHAVE_RGUI -DHAVE_LIBRETRODB
-   	DEFINES += -DHAVE_ZLIB -DHAVE_RPNG -DHAVE_RJPEG -DHAVE_RBMP -DHAVE_RTGA -DWANT_ZLIB -DHAVE_CC_RESAMPLER
-   	DEFINES += -DHAVE_STB_FONT -DHAVE_STB_VORBIS -DHAVE_LANGEXTRA -DHAVE_LIBRETRODB -DHAVE_NETWORKING
-   #	DEFINES += -DWANT_IFADDRS
-   #	DEFINES += -DHAVE_FREETYPE
-   	DEFINES += -DHAVE_XMB -DHAVE_MATERIALUI
+      OBJ += griffin/griffin.o griffin/griffin_cpp.o
+
+      INCDIRS += -Ilibretro-common/include/compat/zlib
+      # for stb, libfat, iosuhax
+      INCDIRS += -Ideps -Ideps/libfat/include -Ideps/libiosuhax
+      # pad_functions uses wiiu/input.h
+      INCDIRS += -Iinput/include
+      INCDIRS += -Ideps/SPIRV-Cross
+
+      DEFINES += -DHAVE_AUDIOMIXER
+      DEFINES += -DHAVE_RWAV
+      DEFINES += -DHAVE_GRIFFIN=1 -DHAVE_MENU -DHAVE_GFX_WIDGETS -DHAVE_CONFIGFILE -DHAVE_PATCH -DHAVE_CHEATS -DHAVE_RGUI -DHAVE_LIBRETRODB
+		DEFINES += -DHAVE_REWIND
+      DEFINES += -DHAVE_ZLIB -DHAVE_RPNG -DHAVE_RJPEG -DHAVE_RBMP -DHAVE_RTGA -DHAVE_CC_RESAMPLER
+      DEFINES += -DHAVE_SPIRV_CROSS -DHAVE_SLANG
+      DEFINES += -DHAVE_STB_FONT -DHAVE_STB_VORBIS -DHAVE_LANGEXTRA -DHAVE_LIBRETRODB -DHAVE_NETWORKING -DHAVE_NETPLAYDISCOVERY
+      #DEFINES += -DWANT_IFADDRS
+      #DEFINES += -DHAVE_FREETYPE
+      DEFINES += -DHAVE_XMB -DHAVE_MATERIALUI
+      DEFINES += -DHAVE_HID
+      DEFINES += -DWANT_LIBFAT -DHAVE_LIBFAT -DWANT_IOSUHAX -DHAVE_IOSUHAX
+      DEFINES += -DSPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS
+
+   # $(GRIFFIN_BUILD),0
    else
-   	HAVE_MENU_COMMON = 1
-   	HAVE_RTGA = 1
-   	HAVE_RPNG = 1
-   	HAVE_RJPEG = 1
-   	HAVE_RBMP = 1
-   	HAVE_RGUI = 1
-   	HAVE_ZLIB = 1
-   	HAVE_7ZIP = 1
-	HAVE_BUILTINZLIB = 0
-   	HAVE_LIBRETRODB = 1
-   	HAVE_ZARCH = 0
-   	HAVE_MATERIALUI = 1
-   	HAVE_XMB = 1
-   	HAVE_STB_FONT = 1
-   #	HAVE_FREETYPE = 1
-   	HAVE_LANGEXTRA = 1
-   	HAVE_LIBRETRODB = 1
-   	HAVE_NETWORKING = 1
-   	HAVE_CHEEVOS = 1
-   #	WANT_IFADDRS = 1
-   	HAVE_OVERLAY = 1
-   	HAVE_STATIC_VIDEO_FILTERS = 1
-   	HAVE_STATIC_AUDIO_FILTERS = 1
-   	WANT_LIBFAT = 1
-   	WANT_IOSUHAX = 1
+      HAVE_SCREENSHOTS = 1
+      HAVE_AUDIOMIXER = 1
+      HAVE_RWAV = 1
+      HAVE_MENU_COMMON = 1
+      HAVE_GFX_WIDGETS = 1
+      HAVE_RTGA = 1
+      HAVE_RPNG = 1
+      HAVE_RJPEG = 1
+      HAVE_RBMP = 1
+      HAVE_CONFIGFILE = 1
+      HAVE_PATCH      = 1
+      HAVE_REWIND     = 1
+      HAVE_CHEATS     = 1
+      HAVE_MENU = 1
+      HAVE_RGUI = 1
+      HAVE_7ZIP = 1
+      HAVE_ZLIB = 1
+      HAVE_BUILTINZLIB = 0
+      HAVE_LIBRETRODB = 1
+      HAVE_MATERIALUI = 1
+      HAVE_XMB = 1
+      HAVE_STB_FONT = 1
+      #HAVE_FREETYPE = 1
+      HAVE_LANGEXTRA = 1
+      HAVE_LIBRETRODB = 1
+      HAVE_NETWORKING = 1
+      HAVE_NETPLAYDISCOVERY = 1
+      HAVE_CHEEVOS = 1
+      #WANT_IFADDRS = 1
+      HAVE_OVERLAY = 1
+      HAVE_SPIRV_CROSS = 1
+      HAVE_SLANG = 1
+      HAVE_VIDEO_LAYOUT = 0
+      HAVE_DSP_FILTER = 1
+      HAVE_VIDEO_FILTER = 1
+      HAVE_STATIC_VIDEO_FILTERS = 1
+      HAVE_STATIC_AUDIO_FILTERS = 1
+      WANT_LIBFAT = 1
+      WANT_IOSUHAX = 1
 
-   	include Makefile.common
-   	BLACKLIST := $(LIBRETRO_COMM_DIR)/net/net_ifinfo.o
-   	OBJ := $(filter-out $(BLACKLIST),$(OBJ))
-
-   	OBJ += gfx/drivers/gx2_gfx.o
-   	OBJ += gfx/drivers_font/wiiu_font.o
-   	OBJ += menu/drivers_display/menu_display_wiiu.o
-   	OBJ += input/drivers/wiiu_input.o
-   	OBJ += input/drivers_joypad/wiiu_joypad.o
-        OBJ += input/drivers_joypad/wiiu/wpad_driver.o
-        OBJ += input/drivers_joypad/wiiu/kpad_driver.o
-        OBJ += input/drivers_joypad/wiiu/pad_functions.o
-
-   	OBJ += audio/drivers/wiiu_audio.o
-   	OBJ += frontend/drivers/platform_wiiu.o
+      include Makefile.common
+      DEFINES += $(DEF_FLAGS)
+      INCDIRS += $(INCLUDE_DIRS)
    endif
 endif
 
 OBJ := $(addprefix $(BUILD_DIR)/,$(OBJ))
 
-#todo: remove -DWIIU and use the built-in macros instead (HW_WUP or __wiiu__).
-DEFINES += -DWIIU -DMSB_FIRST -D__WUT__
-#DEFINES += -D_GNU_SOURCE
+#-----------------------------
+# Compile flags
+
+DEFINES += -DWIIU -D__WUT__ -DHW_WUP -D__wiiu__
 DEFINES += -DHAVE_MAIN
 DEFINES += -DRARCH_CONSOLE
+
+ifeq ($(WIIU_LOG_RPX),1)
+   DEFINES += -DWIIU_LOG_RPX
+endif
 
 ifneq ($(PC_DEVELOPMENT_TCP_PORT),)
    DEFINES += -DPC_DEVELOPMENT_TCP_PORT=$(PC_DEVELOPMENT_TCP_PORT)
 endif
+
+INCDIRS += -I.
+INCDIRS += -Ilibretro-common/include
+INCDIRS += -Iwiiu
+INCDIRS += -Iwiiu/include
+
+CFLAGS  := -mcpu=750 -meabi -mhard-float
+CFLAGS  += -ffast-math -Werror=implicit-function-declaration
+CFLAGS  += -ffunction-sections -fdata-sections
+#CFLAGS += -fomit-frame-pointer -mword-relocations
+CFLAGS += -Wall
+
+ifeq ($(DEBUG), 1)
+   CFLAGS += -O0 -g
+else
+   CFLAGS += -O3
+endif
+
+ASFLAGS := $(CFLAGS) -mregnames
+
+#-----------------------------
+# Linking/library flags
+
+LIBDIRS := -L.
+LDFLAGS := $(CFLAGS)
+
+ifeq ($(WHOLE_ARCHIVE_LINK), 1)
+   WHOLE_START := -Wl,--whole-archive
+   WHOLE_END := -Wl,--no-whole-archive
+endif
+
+LIBS := $(WHOLE_START) -lretro_wiiu $(WHOLE_END) -lm
+
+# Use portlibs zlib if deps/ isn't being used
+ifeq ($(HAVE_ZLIB),1)
+ifeq ($(HAVE_BUILTINZLIB),0)
+   INCDIRS += -I$(DEVKITPRO)/portlibs/ppc/include
+   LIBDIRS += -L$(DEVKITPRO)/portlibs/ppc/lib
+   # Bonus: libpng for cores that need it
+   LIBS += -lpng -lz
+endif
+endif
+
+LDFLAGS += -Wl,--gc-sections
+
+RPX_LDFLAGS      := -pie -fPIE
+RPX_LDFLAGS      += -z common-page-size=64 -z max-page-size=64
+RPX_LDFLAGS      += -T wiiu/link_rpl.ld
+RPX_LDFLAGS      += -nostartfiles
+
+HBL_ELF_LDFLAGS  := -T wiiu/link_elf.ld
+
+#-----------------------------
+# Compiler setup
 
 ifeq ($(strip $(DEVKITPPC)),)
 $(error "Please set DEVKITPPC in your environment. export DEVKITPPC=<path to>devkitPPC")
@@ -173,7 +247,7 @@ ifeq ($(strip $(DEVKITPRO)),)
 $(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path to>devkitPRO")
 endif
 
-export PATH	  := $(PATH):$(DEVKITPPC)/bin
+export PATH   := $(PATH):$(DEVKITPPC)/bin
 
 PREFIX := powerpc-eabi-
 
@@ -194,64 +268,8 @@ else
    ELF2RPL   := $(ELF2RPL).exe
 endif
 
-INCDIRS := -I.
-INCDIRS += -Ideps
-INCDIRS += -Ideps/stb
-INCDIRS += -Ideps/libz
-INCDIRS += -Ideps/7zip
-INCDIRS += -Ilibretro-common/include
-INCDIRS += -Iinput/include
-INCDIRS += -Iwiiu
-INCDIRS += -Iwiiu/include
-INCDIRS += -I$(DEVKITPRO)/portlibs/ppc/include
-LIBDIRS := -L. -L$(DEVKITPRO)/portlibs/ppc/lib
-
-CFLAGS  := -mwup -mcpu=750 -meabi -mhard-float
-LDFLAGS :=
-
-ifeq ($(DEBUG), 1)
-   CFLAGS += -O0 -g
-else
-   CFLAGS += -O3
-endif
-
-LDFLAGS := $(CFLAGS)
-
-ASFLAGS := $(CFLAGS) -mregnames
-
-CFLAGS +=  -ffast-math -Werror=implicit-function-declaration
-#CFLAGS += -fomit-frame-pointer -mword-relocations
-#CFLAGS	+= -Wall
-
-ifeq ($(WHOLE_ARCHIVE_LINK), 1)
-   WHOLE_START := -Wl,--whole-archive
-   WHOLE_END := -Wl,--no-whole-archive
-endif
-
-CXXFLAGS = $(CFLAGS) -fno-rtti -fno-exceptions
-
-LDFLAGS  += -Wl,--gc-sections
-
-LIBS	:= $(WHOLE_START) -lretro_wiiu $(WHOLE_END) -lm -lpng -lz
-
-ifneq ($(WANT_LIBFAT), 1)
-LIBS += -lfat
-endif
-
-ifneq ($(WANT_IOSUHAX), 1)
-LIBS += -liosuhax
-endif
-
-
-RPX_OBJ           = $(BUILD_DIR)/wiiu/system/stubs_rpl.o
-HBL_ELF_OBJ       = $(BUILD_DIR)/wiiu/system/dynamic.o $(BUILD_DIR)/wiiu/system/stubs_elf.o
-
-RPX_LDFLAGS      := -pie -fPIE
-RPX_LDFLAGS      += -z common-page-size=64 -z max-page-size=64
-RPX_LDFLAGS      += -T wiiu/link_rpl.ld
-RPX_LDFLAGS      += -nostartfiles
-
-HBL_ELF_LDFLAGS  := -T wiiu/link_elf.ld
+#-----------------------------
+# Targets and build rules
 
 TARGETS :=
 ifeq ($(BUILD_RPX), 1)
@@ -264,12 +282,10 @@ endif
 
 DEPFLAGS    = -MT $@ -MMD -MP -MF $(BUILD_DIR)/$*.depend
 
-
 all: $(TARGETS)
 
 %: $(BUILD_DIR)/%
 	cp $< $@
-
 
 $(BUILD_DIR)/%.o: %.cpp %.depend
 	@$(if $(Q), echo CXX $<,)
@@ -317,10 +333,11 @@ $(BUILD_DIR)/$(TARGET).rpx: $(BUILD_DIR)/$(TARGET).rpx.elf $(ELF2RPL) .$(TARGET)
 	$(Q)-$(ELF2RPL) $< $@
 
 clean:
-	rm -f $(OBJ) $(RPX_OBJ) $(HBL_ELF_OBJ) $(TARGET).elf $(TARGET).rpx.elf $(TARGET).rpx
-	rm -f $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).rpx.elf $(BUILD_DIR)/$(TARGET).rpx
-	rm -f .$(TARGET).elf.last .$(TARGET).rpx.elf.last .$(TARGET).rpx.last
-	rm -f $(OBJ:.o=.depend) $(RPX_OBJ:.o=.depend) $(HBL_ELF_OBJ:.o=.depend)
+	@$(if $(Q), echo $@,)
+	$(Q)rm -f $(OBJ) $(RPX_OBJ) $(HBL_ELF_OBJ) $(TARGET).elf $(TARGET).rpx.elf $(TARGET).rpx
+	$(Q)rm -f $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).rpx.elf $(BUILD_DIR)/$(TARGET).rpx
+	$(Q)rm -f .$(TARGET).elf.last .$(TARGET).rpx.elf.last .$(TARGET).rpx.last
+	$(Q)rm -f $(OBJ:.o=.depend) $(RPX_OBJ:.o=.depend) $(HBL_ELF_OBJ:.o=.depend)
 
 .PHONY: clean all
 .PRECIOUS: %.depend %.last

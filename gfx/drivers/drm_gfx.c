@@ -210,7 +210,8 @@ static void drm_surface_free(void *data, struct drm_surface **sp)
 /* Changes surface ratio only without recreating the buffers etc. */
 static void drm_surface_set_aspect(struct drm_surface *surface, float aspect)
 {
-	surface->aspect = aspect;
+   if (surface)
+      surface->aspect = aspect;
 }
 
 static void drm_surface_setup(void *data,  int src_width, int src_height,
@@ -336,8 +337,6 @@ static void drm_surface_update(void *data, const void *frame,
    drm_page_flip(surface);
 }
 
-
-
 static uint32_t get_plane_prop_id(uint32_t obj_id, const char *name)
 {
    int i,j;
@@ -407,9 +406,9 @@ static uint64_t drm_plane_type(drmModePlane *plane)
 {
    int i,j;
 
-   /* The property values and their names are stored in different arrays, 
+   /* The property values and their names are stored in different arrays,
     * so we access them simultaneously here.
-    * We are interested in OVERLAY planes only, that's 
+    * We are interested in OVERLAY planes only, that's
     * type 0 or DRM_PLANE_TYPE_OVERLAY
     * (see /usr/xf86drmMode.h for definition). */
    drmModeObjectPropertiesPtr props =
@@ -626,7 +625,6 @@ static bool init_drm(void)
    else
       RARCH_LOG ("DRM: UNIVERSAL PLANES cap set\n");
 
-
    ret = drmSetClientCap(drm.fd, DRM_CLIENT_CAP_ATOMIC, 1);
    if (ret)
    {
@@ -706,9 +704,8 @@ static bool init_drm(void)
    return true;
 }
 
-
 static void *drm_gfx_init(const video_info_t *video,
-      const input_driver_t **input, void **input_data)
+      input_driver_t **input, void **input_data)
 {
    struct drm_video *_drmvars = (struct drm_video*)
       calloc(1, sizeof(struct drm_video));
@@ -761,6 +758,9 @@ static bool drm_gfx_frame(void *data, const void *frame, unsigned width,
       video_frame_info_t *video_info)
 {
    struct drm_video *_drmvars = data;
+#ifdef HAVE_MENU
+   bool menu_is_alive         = video_info->menu_is_alive;
+#endif
 
    if (  ( width != _drmvars->core_width) ||
          (height != _drmvars->core_height))
@@ -773,7 +773,7 @@ static bool drm_gfx_frame(void *data, const void *frame, unsigned width,
       _drmvars->core_height = height;
       _drmvars->core_pitch  = pitch;
 
-      if (_drmvars->main_surface != NULL)
+      if (_drmvars->main_surface)
          drm_surface_free(_drmvars, &_drmvars->main_surface);
 
       /* We need to recreate the main surface and it's pages (buffers). */
@@ -794,7 +794,7 @@ static bool drm_gfx_frame(void *data, const void *frame, unsigned width,
    }
 
 #ifdef HAVE_MENU
-   menu_driver_frame(video_info);
+   menu_driver_frame(menu_is_alive, video_info);
 #endif
 
    /* Update main surface: locate free page, blit and flip. */
@@ -880,27 +880,11 @@ static void drm_set_texture_frame(void *data, const void *frame, bool rgb32,
    drm_surface_update(_drmvars, frame_output, _drmvars->menu_surface);
 }
 
-static void drm_gfx_set_nonblock_state(void *data, bool state)
-{
-   struct drm_video *vid = data;
+static void drm_gfx_set_nonblock_state(void *a, bool b, bool c, unsigned d) { }
 
-   (void)data;
-   (void)vid;
+static bool drm_gfx_alive(void *data) { return true; }
 
-   /* TODO */
-}
-
-static bool drm_gfx_alive(void *data)
-{
-   (void)data;
-   return true; /* always alive */
-}
-
-static bool drm_gfx_focus(void *data)
-{
-   (void)data;
-   return true; /* fb device always has focus */
-}
+static bool drm_gfx_focus(void *data) { return true; }
 
 static void drm_gfx_viewport_info(void *data, struct video_viewport *vp)
 {
@@ -933,27 +917,13 @@ static bool drm_gfx_set_shader(void *data,
    return false;
 }
 
-static void drm_gfx_set_rotation(void *data, unsigned rotation)
-{
-   (void)data;
-   (void)rotation;
-}
-
-static bool drm_gfx_read_viewport(void *data, uint8_t *buffer, bool is_idle)
-{
-   (void)data;
-   (void)buffer;
-
-   return true;
-}
-
 static void drm_set_aspect_ratio (void *data, unsigned aspect_ratio_idx)
 {
    struct drm_video *_drmvars = data;
    /* Here we obtain the new aspect ratio. */
    float new_aspect = aspectratio_lut[aspect_ratio_idx].value;
 
-   if (_drmvars->current_aspect != new_aspect)
+   if (_drmvars && _drmvars->current_aspect != new_aspect)
    {
       _drmvars->current_aspect = new_aspect;
       drm_surface_set_aspect(_drmvars->main_surface, new_aspect);
@@ -967,8 +937,6 @@ static void drm_set_aspect_ratio (void *data, unsigned aspect_ratio_idx)
 
 static const video_poke_interface_t drm_poke_interface = {
    NULL, /* get_flags */
-   NULL, /* set_coords */
-   NULL, /* set_mvp    */
    NULL,
    NULL,
    NULL, /* set_video_mode */
@@ -1032,13 +1000,16 @@ video_driver_t video_drm = {
    drm_gfx_free,
    "drm",
    NULL, /* set_viewport */
-   drm_gfx_set_rotation,
+   NULL, /* set_rotation */
    drm_gfx_viewport_info,
-   drm_gfx_read_viewport,
+   NULL, /* read_viewport */
    NULL, /* read_frame_raw */
 
 #ifdef HAVE_OVERLAY
    NULL, /* overlay_interface */
+#endif
+#ifdef HAVE_VIDEO_LAYOUT
+  NULL,
 #endif
    drm_gfx_get_poke_interface
 };

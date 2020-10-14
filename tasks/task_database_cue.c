@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2011-2017 - Daniel De Matteis
  *  Copyright (C) 2014-2017 - Jean-André Santoni
- *  Copyright (C) 2016-2017 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include <retro_miscellaneous.h>
+#include <retro_endianness.h>
 #include <compat/strcasestr.h>
 #include <compat/strl.h>
 #include <file/file_path.h>
@@ -49,6 +50,8 @@
 #define MODETEST_VAL    0xffffff00
 #endif
 
+/* TODO/FIXME - reorder this according to CODING-GUIDELINES
+ * and make sure LUT table below conforms */
 struct magic_entry
 {
    int32_t offset;
@@ -70,7 +73,7 @@ static int64_t get_token(intfstream_t *fd, char *token, uint64_t max_len)
    int64_t len   = 0;
    int in_string = 0;
 
-   while (1)
+   for (;;)
    {
       int64_t rv = (int64_t)intfstream_read(fd, c, 1);
       if (rv == 0)
@@ -129,14 +132,14 @@ static int detect_ps1_game_sub(intfstream_t *fp,
 {
    uint8_t* tmp;
    uint8_t* boot_file;
-   int skip, frame_size, is_mode1, cd_sector;
+   int skip, frame_size, cd_sector;
    uint8_t buffer[2048 * 2];
+   int is_mode1 = 0;
 
-   buffer[0] = '\0';
-   is_mode1  = 0;
+   buffer[0]    = '\0';
 
    if (intfstream_seek(fp, 0, SEEK_END) == -1)
-      goto error;
+      return 0;
 
    if (!sub_channel_mixed)
    {
@@ -145,7 +148,7 @@ static int detect_ps1_game_sub(intfstream_t *fp,
          unsigned int mode_test = 0;
 
          if (intfstream_seek(fp, 0, SEEK_SET) == -1)
-            goto error;
+            return 0;
 
          intfstream_read(fp, &mode_test, 4);
          if (mode_test != MODETEST_VAL)
@@ -157,21 +160,21 @@ static int detect_ps1_game_sub(intfstream_t *fp,
    frame_size = sub_channel_mixed? 2448: is_mode1? 2048: 2352;
 
    if (intfstream_seek(fp, 156 + skip + 16 * frame_size, SEEK_SET) == -1)
-      goto error;
+      return 0;
 
    intfstream_read(fp, buffer, 6);
 
    cd_sector = buffer[2] | (buffer[3] << 8) | (buffer[4] << 16);
 
    if (intfstream_seek(fp, skip + cd_sector * frame_size, SEEK_SET) == -1)
-      goto error;
+      return 0;
    intfstream_read(fp, buffer, 2048 * 2);
 
    tmp = buffer;
    while (tmp < (buffer + 2048 * 2))
    {
       if (!*tmp)
-         goto error;
+         return 0;
 
       if (!strncasecmp((const char*)(tmp + 33), "SYSTEM.CNF;1", 12))
          break;
@@ -179,27 +182,27 @@ static int detect_ps1_game_sub(intfstream_t *fp,
       tmp += *tmp;
    }
 
-   if(tmp >= (buffer + 2048 * 2))
-      goto error;
+   if (tmp >= (buffer + 2048 * 2))
+      return 0;
 
    cd_sector = tmp[2] | (tmp[3] << 8) | (tmp[4] << 16);
    if (intfstream_seek(fp, skip + cd_sector * frame_size, SEEK_SET) == -1)
-      goto error;
+      return 0;
 
    intfstream_read(fp, buffer, 256);
    buffer[256] = '\0';
 
    tmp = buffer;
-   while(*tmp && strncasecmp((const char*)tmp, "boot", 4))
+   while (*tmp && strncasecmp((const char*)tmp, "boot", 4))
       tmp++;
 
-   if(!*tmp)
-      goto error;
+   if (!*tmp)
+      return 0;
 
    boot_file = tmp;
-   while(*tmp && *tmp != '\n')
+   while (*tmp && *tmp != '\n')
    {
-      if((*tmp == '\\') || (*tmp == ':'))
+      if ((*tmp == '\\') || (*tmp == ':'))
          boot_file = tmp + 1;
 
       tmp++;
@@ -212,22 +215,19 @@ static int detect_ps1_game_sub(intfstream_t *fp,
    *game_id++ = toupper(*tmp++);
    *game_id++ = '-';
 
-   if(!isalnum(*tmp))
+   if (!ISALNUM(*tmp))
       tmp++;
 
-   while(isalnum(*tmp))
+   while (ISALNUM(*tmp))
    {
       *game_id++ = *tmp++;
-      if(*tmp == '.')
+      if (*tmp == '.')
          tmp++;
    }
 
    *game_id = 0;
 
    return 1;
-
-error:
-   return 0;
 }
 
 int detect_ps1_game(intfstream_t *fd, char *game_id)
@@ -249,49 +249,88 @@ int detect_psp_game(intfstream_t *fd, char *game_id)
 
       if (intfstream_read(fd, game_id, 5) > 0)
       {
+         bool found = false;
          game_id[5] = '\0';
 
-         if (
-               (string_is_equal(game_id, "ULES-"))
-               || (string_is_equal(game_id, "ULUS-"))
-               || (string_is_equal(game_id, "ULJS-"))
-
-               || (string_is_equal(game_id, "ULEM-"))
-               || (string_is_equal(game_id, "ULUM-"))
-               || (string_is_equal(game_id, "ULJM-"))
-
-               || (string_is_equal(game_id, "UCES-"))
-               || (string_is_equal(game_id, "UCUS-"))
-               || (string_is_equal(game_id, "UCJS-"))
-               || (string_is_equal(game_id, "UCAS-"))
-
-               || (string_is_equal(game_id, "NPEH-"))
-               || (string_is_equal(game_id, "NPUH-"))
-               || (string_is_equal(game_id, "NPJH-"))
-
-               || (string_is_equal(game_id, "NPEG-"))
-               || (string_is_equal(game_id, "NPUG-"))
-               || (string_is_equal(game_id, "NPJG-"))
-               || (string_is_equal(game_id, "NPHG-"))
-
-               || (string_is_equal(game_id, "NPEZ-"))
-               || (string_is_equal(game_id, "NPUZ-"))
-               || (string_is_equal(game_id, "NPJZ-"))
+         if (string_starts_with_size(game_id, "UL", STRLEN_CONST("UL")))
+         {
+            if (
+                   (string_is_equal(game_id, "ULES-"))
+                || (string_is_equal(game_id, "ULUS-"))
+                || (string_is_equal(game_id, "ULJS-"))
+                || (string_is_equal(game_id, "ULET-"))
+                || (string_is_equal(game_id, "ULUX-"))
+                || (string_is_equal(game_id, "ULJP-"))
+                || (string_is_equal(game_id, "ULED-"))
+                || (string_is_equal(game_id, "ULEM-"))
+                || (string_is_equal(game_id, "ULUM-"))
+                || (string_is_equal(game_id, "ULJM-"))
+                || (string_is_equal(game_id, "ULKS-"))
+                || (string_is_equal(game_id, "ULAS-"))
                )
-               {
-                  intfstream_seek(fd, pos, SEEK_SET);
-                  if (intfstream_read(fd, game_id, 10) > 0)
-                  {
+               found = true;
+         }
+         if (!found && string_starts_with_size(game_id, "UC", STRLEN_CONST("UC")))
+         {
+            if (
+                   (string_is_equal(game_id, "UCES-"))
+                || (string_is_equal(game_id, "UCED-"))
+                || (string_is_equal(game_id, "UCET-"))
+                || (string_is_equal(game_id, "UCJB-"))
+                || (string_is_equal(game_id, "UCJM-"))
+                || (string_is_equal(game_id, "UCJP-"))
+                || (string_is_equal(game_id, "UCJX-"))
+                || (string_is_equal(game_id, "UCJP-"))
+                || (string_is_equal(game_id, "UCKM-"))
+                || (string_is_equal(game_id, "UCUS-"))
+                || (string_is_equal(game_id, "UCAM-"))
+                || (string_is_equal(game_id, "UCJS-"))
+                || (string_is_equal(game_id, "UCAS-"))
+                || (string_is_equal(game_id, "UCKS-"))
+               )
+               found = true;
+         }
+
+         if (!found && string_starts_with_size(game_id, "NP", STRLEN_CONST("NP")))
+         {
+            if (
+                     (string_is_equal(game_id, "NPEH-"))
+                  || (string_is_equal(game_id, "NPUH-"))
+                  || (string_is_equal(game_id, "NPJH-"))
+
+                  || (string_is_equal(game_id, "NPEG-"))
+                  || (string_is_equal(game_id, "NPUG-"))
+                  || (string_is_equal(game_id, "NPJG-"))
+                  || (string_is_equal(game_id, "NPHG-"))
+                  || (string_is_equal(game_id, "NPEX-"))
+                  || (string_is_equal(game_id, "NPHH-"))
+                  || (string_is_equal(game_id, "NPHZ-"))
+                  || (string_is_equal(game_id, "NPJJ-"))
+                  || (string_is_equal(game_id, "NPUF-"))
+                  || (string_is_equal(game_id, "NPUX-"))
+
+                  || (string_is_equal(game_id, "NPEZ-"))
+                  || (string_is_equal(game_id, "NPUZ-"))
+                  || (string_is_equal(game_id, "NPJZ-"))
+               )
+               found = true;
+         }
+
+         if (found)
+         {
+            intfstream_seek(fd, pos, SEEK_SET);
+            if (intfstream_read(fd, game_id, 10) > 0)
+            {
 #if 0
-                     game_id[4] = '-';
-                     game_id[8] = game_id[9];
-                     game_id[9] = game_id[10];
+               game_id[4] = '-';
+               game_id[8] = game_id[9];
+               game_id[9] = game_id[10];
 #endif
-                     game_id[10] = '\0';
-                     rv = true;
-                  }
-                  break;
-               }
+               game_id[10] = '\0';
+               rv = true;
+            }
+            break;
+         }
       }
       else
          break;
@@ -321,8 +360,8 @@ int detect_gc_game(intfstream_t *fd, char *game_id)
 int detect_serial_ascii_game(intfstream_t *fd, char *game_id)
 {
    unsigned pos;
-   int numberOfAscii = 0;
-   bool rv   = false;
+   int number_of_ascii = 0;
+   bool rv             = false;
 
    for (pos = 0; pos < 10000; pos++)
    {
@@ -330,30 +369,32 @@ int detect_serial_ascii_game(intfstream_t *fd, char *game_id)
       if (intfstream_read(fd, game_id, 15) > 0)
       {
          unsigned i;
-         game_id[15] = '\0';
-         numberOfAscii = 0;
+         game_id[15]     = '\0';
+         number_of_ascii = 0;
 
          /* When scanning WBFS files, "WBFS" is discovered as the first serial. Ignore it. */
-         if (string_is_equal(game_id, "WBFS")) {
+         if (string_is_equal(game_id, "WBFS"))
             continue;
-         }
 
          /* Loop through until we run out of ASCII characters. */
          for (i = 0; i < 15; i++)
          {
             /* Is the given character ASCII? A-Z, 0-9, - */
-            if (game_id[i] == 45 || (game_id[i] >= 48 && game_id[i] <= 57) || (game_id[i] >= 65 && game_id[i] <= 90))
-               numberOfAscii++;
+            if (  (game_id[i] == 45) || 
+                  (game_id[i] >= 48 && game_id[i] <= 57) || 
+                  (game_id[i] >= 65 && game_id[i] <= 90))
+               number_of_ascii++;
             else
                break;
          }
 
-         /* If the length of the text is between 3 and 9 characters, it could be a serial. */
-         if (numberOfAscii > 3 && numberOfAscii < 9)
+         /* If the length of the text is between 3 and 9 characters, 
+          * it could be a serial. */
+         if (number_of_ascii > 3 && number_of_ascii < 9)
          {
             /* Cut the string off, and return it as a valid serial. */
-            game_id[numberOfAscii] = '\0';
-            rv = true;
+            game_id[number_of_ascii] = '\0';
+            rv                       = true;
             break;
          }
       }
@@ -364,17 +405,17 @@ int detect_serial_ascii_game(intfstream_t *fd, char *game_id)
 
 int detect_system(intfstream_t *fd, const char **system_name)
 {
-   int rv;
-   char magic[MAGIC_LEN];
    int i;
+   int rv;
    int64_t read;
+   char magic[MAGIC_LEN];
 
-   RARCH_LOG("%s\n", msg_hash_to_str(MSG_COMPARING_WITH_KNOWN_MAGIC_NUMBERS));
    for (i = 0; MAGIC_NUMBERS[i].system_name != NULL; i++)
    {
       intfstream_seek(fd, MAGIC_NUMBERS[i].offset, SEEK_SET);
 
       read = intfstream_read(fd, magic, MAGIC_LEN);
+
       if (read < 0)
       {
          RARCH_LOG("Could not read data at offset %d: %s\n",
@@ -428,8 +469,8 @@ static int64_t intfstream_get_file_size(const char *path)
 }
 
 static bool update_cand(int64_t *cand_index, int64_t *last_index,
-                        uint64_t *largest, char *last_file, uint64_t *offset,
-                        uint64_t *size, char *track_path, uint64_t max_len)
+      uint64_t *largest, char *last_file, uint64_t *offset,
+      uint64_t *size, char *track_path, uint64_t max_len)
 {
    if (*cand_index != -1)
    {
@@ -442,7 +483,7 @@ static bool update_cand(int64_t *cand_index, int64_t *last_index,
          *cand_index = -1;
          return true;
       }
-      *cand_index = -1;
+      *cand_index    = -1;
    }
    return false;
 }
@@ -452,8 +493,9 @@ int cue_find_track(const char *cue_path, bool first,
 {
    int rv;
    intfstream_info_t info;
-   char *tmp_token            = (char*)malloc(MAX_TOKEN_LEN);
-   char *last_file            = (char*)malloc(PATH_MAX_LENGTH + 1);
+   char tmp_token[MAX_TOKEN_LEN];
+   char last_file[PATH_MAX_LENGTH];
+   char cue_dir[PATH_MAX_LENGTH];
    intfstream_t *fd           = NULL;
    int64_t last_index         = -1;
    int64_t cand_index         = -1;
@@ -462,13 +504,12 @@ int cue_find_track(const char *cue_path, bool first,
    uint64_t largest             = 0;
    int64_t volatile file_size = -1;
    bool is_data               = false;
-   char *cue_dir              = (char*)malloc(PATH_MAX_LENGTH);
-   cue_dir[0]                 = '\0';
+   cue_dir[0] = last_file[0]  = '\0';
 
-   fill_pathname_basedir(cue_dir, cue_path, PATH_MAX_LENGTH);
+   fill_pathname_basedir(cue_dir, cue_path, sizeof(cue_dir));
 
-   info.type        = INTFSTREAM_FILE;
-   fd               = (intfstream_t*)intfstream_init(&info);
+   info.type                  = INTFSTREAM_FILE;
+   fd                         = (intfstream_t*)intfstream_init(&info);
 
    if (!fd)
       goto error;
@@ -487,43 +528,45 @@ int cue_find_track(const char *cue_path, bool first,
 
    rv = -EINVAL;
 
-   while (get_token(fd, tmp_token, MAX_TOKEN_LEN) > 0)
+   while (get_token(fd, tmp_token, sizeof(tmp_token)) > 0)
    {
-      if (string_is_equal(tmp_token, "FILE"))
+      if (string_is_equal_noncase(tmp_token, "FILE"))
       {
          /* Set last index to last EOF */
          if (file_size != -1)
             last_index = file_size;
 
          /* We're changing files since the candidate, update it */
-         if (update_cand(&cand_index, &last_index, &largest, last_file, offset,
-                         size, track_path, max_len))
+         if (update_cand(&cand_index, &last_index,
+                  &largest, last_file, offset,
+                  size, track_path, max_len))
          {
             rv = 0;
             if (first)
                goto clean;
          }
 
-         get_token(fd, tmp_token, MAX_TOKEN_LEN);
-         fill_pathname_join(last_file, cue_dir, tmp_token, PATH_MAX_LENGTH);
+         get_token(fd, tmp_token, sizeof(tmp_token));
+         fill_pathname_join(last_file, cue_dir,
+               tmp_token, sizeof(last_file));
 
          file_size = intfstream_get_file_size(last_file);
 
-         get_token(fd, tmp_token, MAX_TOKEN_LEN);
+         get_token(fd, tmp_token, sizeof(tmp_token));
 
       }
-      else if (string_is_equal(tmp_token, "TRACK"))
+      else if (string_is_equal_noncase(tmp_token, "TRACK"))
       {
-         get_token(fd, tmp_token, MAX_TOKEN_LEN);
-         get_token(fd, tmp_token, MAX_TOKEN_LEN);
-         is_data = !string_is_equal(tmp_token, "AUDIO");
+         get_token(fd, tmp_token, sizeof(tmp_token));
+         get_token(fd, tmp_token, sizeof(tmp_token));
+         is_data = !string_is_equal_noncase(tmp_token, "AUDIO");
          ++track;
       }
-      else if (string_is_equal(tmp_token, "INDEX"))
+      else if (string_is_equal_noncase(tmp_token, "INDEX"))
       {
          int m, s, f;
-         get_token(fd, tmp_token, MAX_TOKEN_LEN);
-         get_token(fd, tmp_token, MAX_TOKEN_LEN);
+         get_token(fd, tmp_token, sizeof(tmp_token));
+         get_token(fd, tmp_token, sizeof(tmp_token));
 
          if (sscanf(tmp_token, "%02d:%02d:%02d", &m, &s, &f) < 3)
          {
@@ -535,8 +578,9 @@ int cue_find_track(const char *cue_path, bool first,
 
          /* If we've changed tracks since the candidate, update it */
          if (cand_track != -1 && track != cand_track &&
-             update_cand(&cand_index, &last_index, &largest, last_file, offset,
-                         size, track_path, max_len))
+             update_cand(&cand_index, &last_index, &largest,
+                last_file, offset,
+                size, track_path, max_len))
          {
             rv = 0;
             if (first)
@@ -557,22 +601,17 @@ int cue_find_track(const char *cue_path, bool first,
    if (file_size != -1)
       last_index = file_size;
 
-   if (update_cand(&cand_index, &last_index, &largest, last_file, offset,
-                   size, track_path, max_len))
+   if (update_cand(&cand_index, &last_index,
+            &largest, last_file, offset,
+            size, track_path, max_len))
       rv = 0;
 
 clean:
-   free(cue_dir);
-   free(tmp_token);
-   free(last_file);
    intfstream_close(fd);
    free(fd);
    return rv;
 
 error:
-   free(cue_dir);
-   free(tmp_token);
-   free(last_file);
    if (fd)
    {
       intfstream_close(fd);
@@ -584,28 +623,26 @@ error:
 bool cue_next_file(intfstream_t *fd,
       const char *cue_path, char *path, uint64_t max_len)
 {
+   char tmp_token[MAX_TOKEN_LEN];
+   char cue_dir[PATH_MAX_LENGTH];
    bool rv                    = false;
-   char *tmp_token            = (char*)malloc(MAX_TOKEN_LEN);
-   char *cue_dir              = (char*)malloc(PATH_MAX_LENGTH);
    cue_dir[0]                 = '\0';
 
-   fill_pathname_basedir(cue_dir, cue_path, PATH_MAX_LENGTH);
+   fill_pathname_basedir(cue_dir, cue_path, sizeof(cue_dir));
 
    tmp_token[0] = '\0';
 
-   while (get_token(fd, tmp_token, MAX_TOKEN_LEN) > 0)
+   while (get_token(fd, tmp_token, sizeof(tmp_token)) > 0)
    {
-      if (string_is_equal(tmp_token, "FILE"))
+      if (string_is_equal_noncase(tmp_token, "FILE"))
       {
-         get_token(fd, tmp_token, MAX_TOKEN_LEN);
+         get_token(fd, tmp_token, sizeof(tmp_token));
          fill_pathname_join(path, cue_dir, tmp_token, (size_t)max_len);
          rv = true;
          break;
       }
    }
 
-   free(cue_dir);
-   free(tmp_token);
    return rv;
 }
 
@@ -614,7 +651,7 @@ int gdi_find_track(const char *gdi_path, bool first,
 {
    int rv;
    intfstream_info_t info;
-   char *tmp_token   = (char*)malloc(MAX_TOKEN_LEN);
+   char tmp_token[MAX_TOKEN_LEN];
    intfstream_t *fd  = NULL;
    uint64_t largest  = 0;
    int size          = -1;
@@ -643,36 +680,38 @@ int gdi_find_track(const char *gdi_path, bool first,
    rv = -EINVAL;
 
    /* Skip track count */
-   get_token(fd, tmp_token, MAX_TOKEN_LEN);
+   get_token(fd, tmp_token, sizeof(tmp_token));
 
    /* Track number */
-   while (get_token(fd, tmp_token, MAX_TOKEN_LEN) > 0)
+   while (get_token(fd, tmp_token, sizeof(tmp_token)) > 0)
    {
       /* Offset */
-      if (get_token(fd, tmp_token, MAX_TOKEN_LEN) <= 0)
+      if (get_token(fd, tmp_token, sizeof(tmp_token)) <= 0)
       {
          errno = EINVAL;
          goto error;
       }
 
       /* Mode */
-      if (get_token(fd, tmp_token, MAX_TOKEN_LEN) <= 0)
+      if (get_token(fd, tmp_token, sizeof(tmp_token)) <= 0)
       {
          errno = EINVAL;
          goto error;
       }
+
       mode = atoi(tmp_token);
 
       /* Sector size */
-      if (get_token(fd, tmp_token, MAX_TOKEN_LEN) <= 0)
+      if (get_token(fd, tmp_token, sizeof(tmp_token)) <= 0)
       {
          errno = EINVAL;
          goto error;
       }
+
       size = atoi(tmp_token);
 
       /* File name */
-      if (get_token(fd, tmp_token, MAX_TOKEN_LEN) <= 0)
+      if (get_token(fd, tmp_token, sizeof(tmp_token)) <= 0)
       {
          errno = EINVAL;
          goto error;
@@ -681,22 +720,19 @@ int gdi_find_track(const char *gdi_path, bool first,
       /* Check for data track */
       if (!(mode == 0 && size == 2352))
       {
-         char *last_file   = (char*)malloc(PATH_MAX_LENGTH + 1);
-         char *gdi_dir     = (char*)malloc(PATH_MAX_LENGTH);
+         char last_file[PATH_MAX_LENGTH];
+         char gdi_dir[PATH_MAX_LENGTH];
 
-         gdi_dir[0]        = '\0';
+         gdi_dir[0]        = last_file[0] = '\0';
 
-         fill_pathname_basedir(gdi_dir, gdi_path, PATH_MAX_LENGTH);
+         fill_pathname_basedir(gdi_dir, gdi_path, sizeof(gdi_dir));
 
          fill_pathname_join(last_file,
-               gdi_dir, tmp_token, PATH_MAX_LENGTH);
+               gdi_dir, tmp_token, sizeof(last_file));
          file_size = intfstream_get_file_size(last_file);
+
          if (file_size < 0)
-         {
-            free(gdi_dir);
-            free(last_file);
             goto error;
-         }
 
          if ((uint64_t)file_size > largest)
          {
@@ -706,18 +742,12 @@ int gdi_find_track(const char *gdi_path, bool first,
             largest = file_size;
 
             if (first)
-            {
-               free(gdi_dir);
-               free(last_file);
                goto clean;
-            }
          }
-         free(gdi_dir);
-         free(last_file);
       }
 
       /* Disc offset (not used?) */
-      if (get_token(fd, tmp_token, MAX_TOKEN_LEN) <= 0)
+      if (get_token(fd, tmp_token, sizeof(tmp_token)) <= 0)
       {
          errno = EINVAL;
          goto error;
@@ -725,13 +755,11 @@ int gdi_find_track(const char *gdi_path, bool first,
    }
 
 clean:
-   free(tmp_token);
    intfstream_close(fd);
    free(fd);
    return rv;
 
 error:
-   free(tmp_token);
    if (fd)
    {
       intfstream_close(fd);
@@ -743,47 +771,36 @@ error:
 bool gdi_next_file(intfstream_t *fd, const char *gdi_path,
       char *path, uint64_t max_len)
 {
+   char tmp_token[MAX_TOKEN_LEN];
    bool rv         = false;
-   char *tmp_token = (char*)malloc(MAX_TOKEN_LEN);
-   int64_t offset  = -1;
 
    tmp_token[0]    = '\0';
 
    /* Skip initial track count */
-   offset = intfstream_tell(fd);
-   if (offset == 0)
-      get_token(fd, tmp_token, MAX_TOKEN_LEN);
+   if (intfstream_tell(fd) == 0)
+      get_token(fd, tmp_token, sizeof(tmp_token));
 
-   /* Track number */
-   get_token(fd, tmp_token, MAX_TOKEN_LEN);
-
-   /* Offset */
-   get_token(fd, tmp_token, MAX_TOKEN_LEN);
-
-   /* Mode */
-   get_token(fd, tmp_token, MAX_TOKEN_LEN);
-
-   /* Sector size */
-   get_token(fd, tmp_token, MAX_TOKEN_LEN);
+   get_token(fd, tmp_token, sizeof(tmp_token)); /* Track number */
+   get_token(fd, tmp_token, sizeof(tmp_token)); /* Offset       */
+   get_token(fd, tmp_token, sizeof(tmp_token)); /* Mode         */
+   get_token(fd, tmp_token, sizeof(tmp_token)); /* Sector size  */
 
    /* File name */
-   if (get_token(fd, tmp_token, MAX_TOKEN_LEN) > 0)
+   if (get_token(fd, tmp_token, sizeof(tmp_token)) > 0)
    {
-      char *gdi_dir   = (char*)malloc(PATH_MAX_LENGTH);
+      char gdi_dir[PATH_MAX_LENGTH];
 
       gdi_dir[0]      = '\0';
 
-      fill_pathname_basedir(gdi_dir, gdi_path, PATH_MAX_LENGTH);
+      fill_pathname_basedir(gdi_dir, gdi_path, sizeof(gdi_dir));
 
       fill_pathname_join(path, gdi_dir, tmp_token, (size_t)max_len);
-      rv = true;
+
+      rv              = true;
 
       /* Disc offset */
-      get_token(fd, tmp_token, MAX_TOKEN_LEN);
-
-      free(gdi_dir);
+      get_token(fd, tmp_token, sizeof(tmp_token));
    }
 
-   free(tmp_token);
    return rv;
 }

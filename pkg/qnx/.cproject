@@ -53,6 +53,13 @@
 									<listOptionValue builtIn="false" value="HAVE_MATERIALUI"/>
 									<listOptionValue builtIn="false" value="HAVE_RGUI"/>
 									<listOptionValue builtIn="false" value="HAVE_MENU"/>
+									<listOptionValue builtIn="false" value="HAVE_CONFIGFILE"/>
+									<listOptionValue builtIn="false" value="HAVE_PATCH"/>
+									<listOptionValue builtIn="false" value="HAVE_REWIND"/>
+									<listOptionValue builtIn="false" value="HAVE_DSP_FILTER"/>
+									<listOptionValue builtIn="false" value="HAVE_VIDEO_FILTER"/>
+									<listOptionValue builtIn="false" value="HAVE_SCREENSHOTS"/>
+									<listOptionValue builtIn="false" value="HAVE_CHEATS"/>
 									<listOptionValue builtIn="false" value="RARCH_MOBILE"/>
 									<listOptionValue builtIn="false" value="HAVE_GRIFFIN"/>
 									<listOptionValue builtIn="false" value="HAVE_LANGEXTRA"/>
@@ -66,6 +73,9 @@
 									<listOptionValue builtIn="false" value="HAVE_OVERLAY"/>
 									<listOptionValue builtIn="false" value="HAVE_GLSL"/>
 									<listOptionValue builtIn="false" value="HAVE_NETWORKING"/>
+									<listOptionValue builtIn="false" value="HAVE_ONLINE_UPDATER"/>
+									<listOptionValue builtIn="false" value="HAVE_UPDATE_CORES"/>
+									<listOptionValue builtIn="false" value="HAVE_UPDATE_ASSETS"/>
 									<listOptionValue builtIn="false" value="_FORTIFY_SOURCE=2"/>
 								</option>
 								<option id="com.qnx.qcc.option.compiler.qccoptions.282576124" name="QCC Options" superClass="com.qnx.qcc.option.compiler.qccoptions" valueType="stringList">
@@ -115,6 +125,11 @@
 									<listOptionValue builtIn="false" value="HAVE_MATERIALUI"/>
 									<listOptionValue builtIn="false" value="HAVE_RGUI"/>
 									<listOptionValue builtIn="false" value="HAVE_MENU"/>
+									<listOptionValue builtIn="false" value="HAVE_CONFIGFILE"/>
+									<listOptionValue builtIn="false" value="HAVE_PATCH"/>
+									<listOptionValue builtIn="false" value="HAVE_REWIND"/>
+									<listOptionValue builtIn="false" value="HAVE_SCREENSHOTS"/>
+									<listOptionValue builtIn="false" value="HAVE_CHEATS"/>
 									<listOptionValue builtIn="false" value="RARCH_MOBILE"/>
 									<listOptionValue builtIn="false" value="HAVE_GRIFFIN"/>
 									<listOptionValue builtIn="false" value="HAVE_LANGEXTRA"/>
@@ -238,6 +253,11 @@
 									<listOptionValue builtIn="false" value="HAVE_MATERIALUI"/>
 									<listOptionValue builtIn="false" value="HAVE_RGUI"/>
 									<listOptionValue builtIn="false" value="HAVE_MENU"/>
+									<listOptionValue builtIn="false" value="HAVE_CONFIGFILE"/>
+									<listOptionValue builtIn="false" value="HAVE_PATCH"/>
+									<listOptionValue builtIn="false" value="HAVE_REWIND"/>
+									<listOptionValue builtIn="false" value="HAVE_SCREENSHOTS"/>
+									<listOptionValue builtIn="false" value="HAVE_CHEATS"/>
 									<listOptionValue builtIn="false" value="RARCH_MOBILE"/>
 									<listOptionValue builtIn="false" value="HAVE_GRIFFIN"/>
 									<listOptionValue builtIn="false" value="HAVE_LANGEXTRA"/>
@@ -300,6 +320,11 @@
 									<listOptionValue builtIn="false" value="HAVE_MATERIALUI"/>
 									<listOptionValue builtIn="false" value="HAVE_RGUI"/>
 									<listOptionValue builtIn="false" value="HAVE_MENU"/>
+									<listOptionValue builtIn="false" value="HAVE_CONFIGFILE"/>
+									<listOptionValue builtIn="false" value="HAVE_PATCH"/>
+									<listOptionValue builtIn="false" value="HAVE_REWIND"/>
+									<listOptionValue builtIn="false" value="HAVE_SCREENSHOTS"/>
+									<listOptionValue builtIn="false" value="HAVE_CHEATS"/>
 									<listOptionValue builtIn="false" value="RARCH_MOBILE"/>
 									<listOptionValue builtIn="false" value="HAVE_GRIFFIN"/>
 									<listOptionValue builtIn="false" value="HAVE_LANGEXTRA"/>
@@ -426,6 +451,11 @@
 									<listOptionValue builtIn="false" value="HAVE_MATERIALUI"/>
 									<listOptionValue builtIn="false" value="HAVE_RGUI"/>
 									<listOptionValue builtIn="false" value="HAVE_MENU"/>
+									<listOptionValue builtIn="false" value="HAVE_CONFIGFILE"/>
+									<listOptionValue builtIn="false" value="HAVE_PATCH"/>
+									<listOptionValue builtIn="false" value="HAVE_REWIND"/>
+									<listOptionValue builtIn="false" value="HAVE_SCREENSHOTS"/>
+									<listOptionValue builtIn="false" value="HAVE_CHEATS"/>
 									<listOptionValue builtIn="false" value="RARCH_MOBILE"/>
 									<listOptionValue builtIn="false" value="HAVE_GRIFFIN"/>
 									<listOptionValue builtIn="false" value="HAVE_LANGEXTRA"/>
@@ -488,6 +518,11 @@
 									<listOptionValue builtIn="false" value="HAVE_MATERIALUI"/>
 									<listOptionValue builtIn="false" value="HAVE_RGUI"/>
 									<listOptionValue builtIn="false" value="HAVE_MENU"/>
+									<listOptionValue builtIn="false" value="HAVE_CONFIGFILE"/>
+									<listOptionValue builtIn="false" value="HAVE_PATCH"/>
+									<listOptionValue builtIn="false" value="HAVE_REWIND"/>
+									<listOptionValue builtIn="false" value="HAVE_SCREENSHOTS"/>
+									<listOptionValue builtIn="false" value="HAVE_CHEATS"/>
 									<listOptionValue builtIn="false" value="RARCH_MOBILE"/>
 									<listOptionValue builtIn="false" value="HAVE_GRIFFIN"/>
 									<listOptionValue builtIn="false" value="HAVE_LANGEXTRA"/>
@@ -611,6 +646,11 @@
 									<listOptionValue builtIn="false" value="HAVE_MATERIALUI"/>
 									<listOptionValue builtIn="false" value="HAVE_RGUI"/>
 									<listOptionValue builtIn="false" value="HAVE_MENU"/>
+									<listOptionValue builtIn="false" value="HAVE_CONFIGFILE"/>
+									<listOptionValue builtIn="false" value="HAVE_PATCH"/>
+									<listOptionValue builtIn="false" value="HAVE_REWIND"/>
+									<listOptionValue builtIn="false" value="HAVE_SCREENSHOTS"/>
+									<listOptionValue builtIn="false" value="HAVE_CHEATS"/>
 									<listOptionValue builtIn="false" value="RARCH_MOBILE"/>
 									<listOptionValue builtIn="false" value="HAVE_GRIFFIN"/>
 									<listOptionValue builtIn="false" value="HAVE_LANGEXTRA"/>
@@ -673,6 +713,11 @@
 									<listOptionValue builtIn="false" value="HAVE_MATERIALUI"/>
 									<listOptionValue builtIn="false" value="HAVE_RGUI"/>
 									<listOptionValue builtIn="false" value="HAVE_MENU"/>
+									<listOptionValue builtIn="false" value="HAVE_CONFIGFILE"/>
+									<listOptionValue builtIn="false" value="HAVE_PATCH"/>
+									<listOptionValue builtIn="false" value="HAVE_REWIND"/>
+									<listOptionValue builtIn="false" value="HAVE_SCREENSHOTS"/>
+									<listOptionValue builtIn="false" value="HAVE_CHEATS"/>
 									<listOptionValue builtIn="false" value="RARCH_MOBILE"/>
 									<listOptionValue builtIn="false" value="HAVE_GRIFFIN"/>
 									<listOptionValue builtIn="false" value="HAVE_LANGEXTRA"/>

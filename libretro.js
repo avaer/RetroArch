@@ -110,21 +110,6 @@ function setupFileSystem(backend)
    var BFS = new BrowserFS.EmscriptenFS();
    FS.mount(BFS, {root: '/home'}, '/home');
    console.log("WEBPLAYER: " + backend + " filesystem initialization successful");
-   
-   window.mfs = mfs;
-   const _recurse = () => new Promise((accept, reject) => {
-     try {
-       const cfgFile = mfs.readFileSync('/home/web_user/retroarch/userdata/retroarch.cfg', null, {pathExistsAction(){return 0;},isReadable(){return true}});
-       const cfgFileData = cfgFile.data.buff.buffer;
-       accept(cfgFileData);
-     } catch(err) {
-       setTimeout(_recurse);
-     }
-   });
-   _recurse()
-     .then(a => {
-       console.log('got cfg file data', a);
-     });
 }
 
 /**

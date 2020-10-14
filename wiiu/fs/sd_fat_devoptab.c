@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <sys/statvfs.h>
 #include <sys/dirent.h>
+#include <sys/iosupport.h>
 #include <string.h>
 #include <malloc.h>
 #include <fcntl.h>
@@ -201,7 +202,6 @@ static int sd_fat_open_r (struct _reent *r, void *fileStruct, const char *path, 
     OSUnlockMutex(dev->pMutex);
     return -1;
 }
-
 
 static int sd_fat_close_r (struct _reent *r, void* fd)
 {
@@ -382,11 +382,11 @@ static ssize_t sd_fat_read_r (struct _reent *r, void* fd, char *ptr, size_t len)
     return done;
 }
 
-
 static int sd_fat_fstat_r (struct _reent *r, void* fd, struct stat *st)
 {
     sd_fat_file_state_t *file = (sd_fat_file_state_t *)fd;
-    if(!file->dev) {
+    if(!file->dev)
+    {
         r->_errno = ENODEV;
         return -1;
     }
@@ -538,7 +538,6 @@ static int sd_fat_unlink_r (struct _reent *r, const char *name)
         OSUnlockMutex(dev->pMutex);
         return -1;
     }
-
 
     int result = FSRemove(dev->pClient, dev->pCmd, real_path, -1);
 

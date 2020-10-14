@@ -1,5 +1,6 @@
-﻿/*  RetroArch - A frontend for libretro.
+/*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2014-2018 - Ali Bouhlel
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -14,18 +15,25 @@
  */
 
 #define CINTERFACE
+#define COBJMACROS
 
 #include <boolean.h>
 
+#include "d3d_common.h"
 #include "d3d12_common.h"
 #include "dxgi_common.h"
 #include "d3dcompiler_common.h"
 
 #include "../verbosity.h"
+#include "../../configuration.h"
 
 #ifdef HAVE_DYNAMIC
 #include <dynamic/dylib.h>
 #endif
+
+#include <encodings/utf.h>
+#include <lists/string_list.h>
+#include <dxgi.h>
 
 #ifdef __MINGW32__
 /* clang-format off */
@@ -65,7 +73,7 @@ DEFINE_GUIDW(IID_ID3D12DebugCommandList, 0x09e0bf36, 0x54ac, 0x484f, 0x88, 0x47,
 /* clang-format on */
 #endif
 
-#ifdef HAVE_DYNAMIC
+#if defined(HAVE_DYNAMIC) && !defined(__WINRT__)
 static dylib_t     d3d12_dll;
 static const char* d3d12_dll_name = "d3d12.dll";
 
@@ -153,27 +161,84 @@ HRESULT WINAPI D3D12SerializeVersionedRootSignature(
 
 bool d3d12_init_base(d3d12_video_t* d3d12)
 {
-
+   DXGIAdapter adapter = NULL;
 #ifdef DEBUG
    D3D12GetDebugInterface_(&d3d12->debugController);
    D3D12EnableDebugLayer(d3d12->debugController);
 #endif
 
+#ifdef __WINRT__
+   DXGICreateFactory2(&d3d12->factory);
+#else
    DXGICreateFactory(&d3d12->factory);
+#endif
 
    {
       int i = 0;
+      settings_t *settings = config_get_ptr();
+      int gpu_index        = settings->ints.d3d12_gpu_index;
 
-      while (true)
+      if (d3d12->gpu_list)
+         string_list_free(d3d12->gpu_list);
+
+      d3d12->gpu_list = string_list_new();
+
+      for (;;)
       {
-         if (FAILED(DXGIEnumAdapters(d3d12->factory, i++, &d3d12->adapter)))
-            return false;
+         char str[128];
+         union string_list_elem_attr attr = {0};
+         DXGI_ADAPTER_DESC desc           = {0};
 
-         if (SUCCEEDED(D3D12CreateDevice_(d3d12->adapter, D3D_FEATURE_LEVEL_11_0, &d3d12->device)))
+         str[0] = '\0';
+
+#ifdef __WINRT__
+         if (FAILED(DXGIEnumAdapters2(d3d12->factory, i, &adapter)))
             break;
+#else
+         if (FAILED(DXGIEnumAdapters(d3d12->factory, i, &adapter)))
+            break;
+#endif
 
-         Release(d3d12->adapter);
+         IDXGIAdapter_GetDesc(adapter, &desc);
+
+         utf16_to_char_string((const uint16_t*)desc.Description, str, sizeof(str));
+
+         RARCH_LOG("[D3D12]: Found GPU at index %d: %s\n", i, str);
+
+         string_list_append(d3d12->gpu_list, str, attr);
+
+         if (i < D3D12_MAX_GPU_COUNT)
+         {
+            AddRef(adapter);
+            d3d12->adapters[i] = adapter;
+         }
+         Release(adapter);
+         adapter = NULL;
+
+         i++;
+         if (i >= D3D12_MAX_GPU_COUNT)
+            break;
       }
+
+      video_driver_set_gpu_api_devices(GFX_CTX_DIRECT3D12_API, d3d12->gpu_list);
+
+      if (0 <= gpu_index && gpu_index <= i && gpu_index < D3D12_MAX_GPU_COUNT)
+      {
+         d3d12->adapter = d3d12->adapters[gpu_index];
+         AddRef(d3d12->adapter);
+         RARCH_LOG("[D3D12]: Using GPU index %d.\n", gpu_index);
+         video_driver_set_gpu_device_string(
+               d3d12->gpu_list->elems[gpu_index].data);
+      }
+      else
+      {
+         RARCH_WARN("[D3D12]: Invalid GPU index %d, using first device found.\n", gpu_index);
+         d3d12->adapter = d3d12->adapters[0];
+         AddRef(d3d12->adapter);
+      }
+
+      if (!SUCCEEDED(D3D12CreateDevice_(d3d12->adapter, D3D_FEATURE_LEVEL_11_0, &d3d12->device)))
+         RARCH_WARN("[D3D12]: Could not create D3D12 device.\n");
    }
 
    return true;
@@ -182,14 +247,22 @@ bool d3d12_init_base(d3d12_video_t* d3d12)
 bool d3d12_init_queue(d3d12_video_t* d3d12)
 {
    {
-      static const D3D12_COMMAND_QUEUE_DESC desc = { D3D12_COMMAND_LIST_TYPE_DIRECT, 0,
-                                                     D3D12_COMMAND_QUEUE_FLAG_NONE, 0 };
+      static const D3D12_COMMAND_QUEUE_DESC desc = { 
+         D3D12_COMMAND_LIST_TYPE_DIRECT,
+         0,
+         D3D12_COMMAND_QUEUE_FLAG_NONE,
+         0
+      };
       D3D12CreateCommandQueue(
-            d3d12->device, (D3D12_COMMAND_QUEUE_DESC*)&desc, &d3d12->queue.handle);
+            d3d12->device,
+            (D3D12_COMMAND_QUEUE_DESC*)&desc,
+            &d3d12->queue.handle);
    }
 
    D3D12CreateCommandAllocator(
-         d3d12->device, D3D12_COMMAND_LIST_TYPE_DIRECT, &d3d12->queue.allocator);
+         d3d12->device,
+         D3D12_COMMAND_LIST_TYPE_DIRECT,
+         &d3d12->queue.allocator);
 
    D3D12CreateGraphicsCommandList(
          d3d12->device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, d3d12->queue.allocator,
@@ -207,17 +280,29 @@ bool d3d12_init_queue(d3d12_video_t* d3d12)
 }
 
 bool d3d12_init_swapchain(d3d12_video_t* d3d12,
-      int width, int height, HWND hwnd)
+      int width, int height, void* corewindow)
 {
    unsigned i;
+   HRESULT hr;
+#ifdef __WINRT__
+   DXGI_SWAP_CHAIN_DESC1 desc;
+   memset(&desc, 0, sizeof(DXGI_SWAP_CHAIN_DESC1));
+#else
    DXGI_SWAP_CHAIN_DESC desc;
-
+   HWND hwnd                 = (HWND)corewindow;
    memset(&desc, 0, sizeof(DXGI_SWAP_CHAIN_DESC));
+#endif
 
    desc.BufferCount          = countof(d3d12->chain.renderTargets);
+#ifdef __WINRT__
+   desc.Width                = width;
+   desc.Height               = height;
+   desc.Format               = DXGI_FORMAT_R8G8B8A8_UNORM;
+#else
    desc.BufferDesc.Width     = width;
    desc.BufferDesc.Height    = height;
    desc.BufferDesc.Format    = DXGI_FORMAT_R8G8B8A8_UNORM;
+#endif
    desc.SampleDesc.Count     = 1;
 #if 0
    desc.BufferDesc.RefreshRate.Numerator   = 60;
@@ -225,16 +310,30 @@ bool d3d12_init_swapchain(d3d12_video_t* d3d12,
    desc.SampleDesc.Quality                 = 0;
 #endif
    desc.BufferUsage  = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+#ifdef HAVE_WINDOW
    desc.OutputWindow = hwnd;
    desc.Windowed     = TRUE;
+#endif
 #if 0
    desc.SwapEffect                         = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 #else
    desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 #endif
-   DXGICreateSwapChain(d3d12->factory, d3d12->queue.handle, &desc, &d3d12->chain.handle);
 
+#ifdef __WINRT__
+   hr = DXGICreateSwapChainForCoreWindow(d3d12->factory, d3d12->queue.handle, corewindow, &desc, NULL, &d3d12->chain.handle);
+#else
+   hr = DXGICreateSwapChain(d3d12->factory, d3d12->queue.handle, &desc, &d3d12->chain.handle);
+#endif
+   if (FAILED(hr))
+   {
+      RARCH_ERR("[D3D12]: Failed to create the swap chain (0x%08X)\n", hr);
+      return false;
+   }
+
+#ifdef HAVE_WINDOW
    DXGIMakeWindowAssociation(d3d12->factory, hwnd, DXGI_MWA_NO_ALT_ENTER);
+#endif
 
    d3d12->chain.frame_index = DXGIGetCurrentBackBufferIndex(d3d12->chain.handle);
 
@@ -291,7 +390,7 @@ static D3D12_CPU_DESCRIPTOR_HANDLE d3d12_descriptor_heap_slot_alloc(d3d12_descri
 static void
 d3d12_descriptor_heap_slot_free(d3d12_descriptor_heap_t* heap, D3D12_CPU_DESCRIPTOR_HANDLE handle)
 {
-   int i;
+   unsigned i;
 
    if (!handle.ptr)
       return;
@@ -303,7 +402,7 @@ d3d12_descriptor_heap_slot_free(d3d12_descriptor_heap_t* heap, D3D12_CPU_DESCRIP
    assert(heap->map[i]);
 
    heap->map[i] = false;
-   if (heap->start > i)
+   if (heap->start > (int)i)
       heap->start = i;
 }
 

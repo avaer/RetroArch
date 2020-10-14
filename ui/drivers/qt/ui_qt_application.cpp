@@ -1,6 +1,6 @@
 /* RetroArch - A frontend for libretro.
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- *  Copyright (C) 2018 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  * RetroArch is free software: you can redistribute it and/or modify it under the terms
  * of the GNU General Public License as published by the Free Software Found-
@@ -17,7 +17,10 @@
 #include <QApplication>
 #include <QAbstractEventDispatcher>
 
+#ifndef CXX_BUILD
 extern "C" {
+#endif
+
 #include "../../ui_companion_driver.h"
 #include "../../../retroarch.h"
 #include "../../../verbosity.h"
@@ -25,63 +28,37 @@ extern "C" {
 #include "../../../frontend/frontend.h"
 #include "../../../tasks/tasks_internal.h"
 #include <retro_timers.h>
+#ifdef Q_OS_UNIX
+#include <locale.h>
+#endif
+
+#ifndef CXX_BUILD
 }
+#endif
 
 #include "../ui_qt.h"
 
-static AppHandler *appHandler;
+static AppHandler *app_handler;
 static ui_application_qt_t ui_application;
-static bool app_exiting = false;
 
-/* these must last for the lifetime of the QApplication */
-static int app_argc = 1;
-static char app_name[] = "retroarch";
-static char *app_argv[] = { app_name, NULL };
-
+/* ARGB 16x16 */
 static const unsigned retroarch_qt_icon_data[] = {
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0xffffffff, 0xffffffff, 0xffffffff,
-   0x00000000, 0x00000000, 0x00000000, 0xffffffff, 0xffffffff, 0xffffffff,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0xffffffff,
-   0xffffffff, 0xffffffff, 0x000000ff, 0xffffffff, 0xffffffff, 0x00000000,
-   0xffffffff, 0xffffffff, 0x000000ff, 0xffffffff, 0xffffffff, 0xffffffff,
-   0x00000000, 0x00000000, 0x00000000, 0xffffffff, 0x000000ff, 0xffffffff,
-   0xffffffff, 0x000000ff, 0xffffffff, 0xffffffff, 0xffffffff, 0x000000ff,
-   0xffffffff, 0xffffffff, 0x000000ff, 0xffffffff, 0x00000000, 0x00000000,
-   0x00000000, 0xffffffff, 0x000000ff, 0xffffffff, 0x000000ff, 0x000000ff,
-   0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff, 0xffffffff,
-   0x000000ff, 0xffffffff, 0x00000000, 0x00000000, 0x00000000, 0xffffffff,
-   0x000000ff, 0x000000ff, 0x000000ff, 0xffffffff, 0x000000ff, 0x000000ff,
-   0x000000ff, 0xffffffff, 0x000000ff, 0x000000ff, 0x000000ff, 0xffffffff,
-   0x00000000, 0x00000000, 0x00000000, 0xffffffff, 0x000000ff, 0x000000ff,
-   0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff,
-   0x000000ff, 0x000000ff, 0x000000ff, 0xffffffff, 0x00000000, 0x00000000,
-   0x00000000, 0xffffffff, 0xffffffff, 0x000000ff, 0x000000ff, 0x000000ff,
-   0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff,
-   0xffffffff, 0xffffffff, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0xffffffff, 0xffffffff, 0x000000ff, 0xffffffff, 0xffffffff, 0xffffffff,
-   0xffffffff, 0xffffffff, 0x000000ff, 0xffffffff, 0xffffffff, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0xffffffff, 0x000000ff,
-   0xffffffff, 0xffffffff, 0x00000000, 0x00000000, 0x00000000, 0xffffffff,
-   0xffffffff, 0x000000ff, 0xffffffff, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0xffffffff, 0xffffffff, 0xffffffff, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0xffffffff, 0xffffffff,
-   0xffffffff, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-   0x00000000, 0x00000000, 0x00000000, 0x00000000
+0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,
+0x00000000,0x00000000,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0x00000000,0x00000000,0x00000000,
+0x00000000,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xff333333,0xff333333,0xfff2f2f2,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xfff2f2f2,0xff333333,0xff333333,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xfff2f2f2,0xff333333,0xff333333,0xfff2f2f2,0xff333333,0xff333333,0xff333333,0xfff2f2f2,0xff333333,0xff333333,0xfff2f2f2,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xfff2f2f2,0xff333333,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xff333333,0xfff2f2f2,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xff333333,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xff333333,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xff333333,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xfff2f2f2,0xff333333,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xff333333,0xff333333,0xfff2f2f2,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xfff2f2f2,0xff333333,0xff333333,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xff333333,0xfff2f2f2,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xfff2f2f2,0xff333333,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0x00000000,0x00000000,
+0x00000000,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0x00000000,0x00000000,
+0x00000000,0x00000000,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0xff333333,0x00000000,0x00000000,0x00000000,
+0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000
 };
 
 AppHandler::AppHandler(QObject *parent) :
@@ -95,7 +72,7 @@ AppHandler::~AppHandler()
 
 void AppHandler::exit()
 {
-   app_exiting = true;
+   ui_application_qt.exiting = true;
 
    if (qApp)
       qApp->closeAllWindows();
@@ -103,7 +80,7 @@ void AppHandler::exit()
 
 bool AppHandler::isExiting() const
 {
-   return app_exiting;
+   return ui_application_qt.exiting;
 }
 
 void AppHandler::onLastWindowClosed()
@@ -112,7 +89,12 @@ void AppHandler::onLastWindowClosed()
 
 static void* ui_application_qt_initialize(void)
 {
-   appHandler = new AppHandler();
+   /* These must last for the lifetime of the QApplication */
+   static int app_argc     = 1;
+   static char app_name[]  = "retroarch";
+   static char *app_argv[] = { app_name, NULL };
+
+   app_handler             = new AppHandler();
 
 #if (QT_VERSION >= QT_VERSION_CHECK(5, 6, 0))
    /* HiDpi supported since Qt 5.6 */
@@ -125,8 +107,12 @@ static void* ui_application_qt_initialize(void)
    ui_application.app->setOrganizationName("libretro");
    ui_application.app->setApplicationName("RetroArch");
    ui_application.app->setApplicationVersion(PACKAGE_VERSION);
-   ui_application.app->connect(ui_application.app, SIGNAL(lastWindowClosed()), appHandler, SLOT(onLastWindowClosed()));
+   ui_application.app->connect(ui_application.app, SIGNAL(lastWindowClosed()),
+         app_handler, SLOT(onLastWindowClosed()));
 
+#ifdef Q_OS_UNIX
+   setlocale(LC_NUMERIC, "C");
+#endif
    {
       /* Can't declare the pixmap at the top, because: "QPixmap: Must construct a QGuiApplication before a QPixmap" */
       QImage iconImage(16, 16, QImage::Format_ARGB32);
@@ -143,58 +129,21 @@ static void* ui_application_qt_initialize(void)
    return &ui_application;
 }
 
-static bool ui_application_qt_pending_events(void)
-{
-   QAbstractEventDispatcher *dispatcher = QApplication::eventDispatcher();
-
-   if (dispatcher)
-      return dispatcher->hasPendingEvents();
-
-   return false;
-}
-
 static void ui_application_qt_process_events(void)
 {
-   if (ui_application_qt_pending_events())
+   QAbstractEventDispatcher *dispatcher = QApplication::eventDispatcher();
+   if (dispatcher && dispatcher->hasPendingEvents())
       QApplication::processEvents();
 }
 
 static void ui_application_qt_quit(void)
 {
-   if (appHandler)
-      appHandler->exit();
-}
-
-static void ui_application_qt_run(void *args)
-{
-#ifdef HAVE_MAIN
-   int ret;
-   unsigned sleep_ms = 0;
-
-   do
-   {
-      ui_application_qt_process_events();
-
-      ret = runloop_iterate(&sleep_ms);
-
-      if (ret == 1 && sleep_ms > 0)
-         retro_sleep(sleep_ms);
-
-      task_queue_check();
-
-      if (ret == -1 || app_exiting)
-      {
-         ui_application_qt_quit();
-         break;
-      }
-   }while(1);
-
-   main_exit(args);
-#endif
+   if (app_handler)
+      app_handler->exit();
 }
 
 #ifdef HAVE_MAIN
-#ifdef __cplusplus
+#if defined(__cplusplus) && !defined(CXX_BUILD)
 extern "C"
 #endif
 int main(int argc, char *argv[])
@@ -205,9 +154,8 @@ int main(int argc, char *argv[])
 
 ui_application_t ui_application_qt = {
    ui_application_qt_initialize,
-   ui_application_qt_pending_events,
    ui_application_qt_process_events,
-   ui_application_qt_run,
    ui_application_qt_quit,
+   false,
    "qt"
 };

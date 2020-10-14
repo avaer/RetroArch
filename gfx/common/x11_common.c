@@ -39,6 +39,7 @@
 #include <X11/extensions/xf86vmode.h>
 
 #include <encodings/utf.h>
+#include <compat/strl.h>
 
 #ifdef HAVE_DBUS
 #include "dbus_common.h"
@@ -48,6 +49,7 @@
 #include "../../input/input_driver.h"
 #include "../../input/input_keymaps.h"
 #include "../../input/common/input_x11_common.h"
+#include "../../configuration.h"
 #include "../../verbosity.h"
 
 #define _NET_WM_STATE_ADD                    1
@@ -55,34 +57,34 @@
 #define MOVERESIZE_X_SHIFT                   8
 #define MOVERESIZE_Y_SHIFT                   9
 
+#define V_DBLSCAN                            0x20
 
+/* TODO/FIXME - globals */
+bool g_x11_entered                          = false;
+Display *g_x11_dpy                          = NULL;
+unsigned g_x11_screen                       = 0;
+Window   g_x11_win                          = None;
+Colormap g_x11_cmap;
+
+/* TODO/FIXME - static globals */
 static XF86VidModeModeInfo desktop_mode;
 static bool xdg_screensaver_available       = true;
-bool g_x11_entered                          = false;
 static bool g_x11_has_focus                 = false;
 static bool g_x11_true_full                 = false;
-Display *g_x11_dpy                          = NULL;
-
-unsigned g_x11_screen                       = 0;
-
-Colormap g_x11_cmap;
-Window   g_x11_win = None;
-
 static Atom XA_NET_WM_STATE;
 static Atom XA_NET_WM_STATE_FULLSCREEN;
 static Atom XA_NET_MOVERESIZE_WINDOW;
-
 static Atom g_x11_quit_atom;
 static XIM g_x11_xim;
 static XIC g_x11_xic;
 
 static void x11_hide_mouse(Display *dpy, Window win)
 {
-   static char bm_no_data[] = {0, 0, 0, 0, 0, 0, 0, 0};
    Cursor no_ptr;
    Pixmap bm_no;
    XColor black, dummy;
-   Colormap colormap = DefaultColormap(dpy, DefaultScreen(dpy));
+   static char bm_no_data[] = {0, 0, 0, 0, 0, 0, 0, 0};
+   Colormap colormap        = DefaultColormap(dpy, DefaultScreen(dpy));
 
    if (!XAllocNamedColor(dpy, colormap, "black", &black, &dummy))
       return;
@@ -134,7 +136,8 @@ void x11_move_window(Display *dpy, Window win, int x, int y,
 {
    XEvent xev               = {0};
 
-   XA_NET_MOVERESIZE_WINDOW = XInternAtom(dpy, "_NET_MOVERESIZE_WINDOW", False);
+   XA_NET_MOVERESIZE_WINDOW = XInternAtom(dpy,
+		   "_NET_MOVERESIZE_WINDOW", False);
 
    xev.xclient.type         = ClientMessage;
    xev.xclient.send_event   = True;
@@ -170,12 +173,12 @@ static void x11_set_window_pid(Display *dpy, Window win)
         XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&pid, 1);
 
     errno = 0;
-    if((scret = sysconf(_SC_HOST_NAME_MAX)) == -1 && errno)
+    if ((scret = sysconf(_SC_HOST_NAME_MAX)) == -1 && errno)
         return;
-    if((hostname = (char*)malloc(scret + 1)) == NULL)
+    if (!(hostname = (char*)malloc(scret + 1)))
         return;
 
-    if(gethostname(hostname, scret + 1) == -1)
+    if (gethostname(hostname, scret + 1) == -1)
         RARCH_WARN("Failed to get hostname.\n");
     else
     {
@@ -215,23 +218,15 @@ static void xdg_screensaver_inhibit(Window wnd)
    }
 }
 
-void x11_suspend_screensaver_xdg_screensaver(Window wnd, bool enable)
-{
-   /* Check if screensaver suspend is enabled in config */
-   if (!enable)
-      return;
-
-   if (xdg_screensaver_available)
-      xdg_screensaver_inhibit(wnd);
-}
-
 void x11_suspend_screensaver(Window wnd, bool enable)
 {
 #ifdef HAVE_DBUS
     if (dbus_suspend_screensaver(enable))
        return;
 #endif
-    x11_suspend_screensaver_xdg_screensaver(wnd, enable);
+    if (enable)
+       if (xdg_screensaver_available)
+          xdg_screensaver_inhibit(wnd);
 }
 
 float x11_get_refresh_rate(void *data)
@@ -241,6 +236,7 @@ float x11_get_refresh_rate(void *data)
    Screen *screen;
    int screenid;
    int dotclock;
+   float refresh;
 
    if (!g_x11_dpy || g_x11_win == None)
       return 0.0f;
@@ -253,10 +249,16 @@ float x11_get_refresh_rate(void *data)
 
    XF86VidModeGetModeLine(g_x11_dpy, screenid, &dotclock, &modeline);
 
-   return (float) dotclock * 1000.0f / modeline.htotal / modeline.vtotal;
+   /* non-native modes like 1080p on a 4K display might use DoubleScan */
+   if (modeline.flags & V_DBLSCAN)
+      dotclock /= 2;
+
+   refresh = (float)dotclock * 1000.0f / modeline.htotal / modeline.vtotal;
+
+   return refresh;
 }
 
-static bool get_video_mode(video_frame_info_t *video_info,
+static bool get_video_mode(
       Display *dpy, unsigned width, unsigned height,
       XF86VidModeModeInfo *mode, XF86VidModeModeInfo *desktop_mode)
 {
@@ -265,6 +267,9 @@ static bool get_video_mode(video_frame_info_t *video_info,
    float refresh_mod           = 0.0f;
    float minimum_fps_diff      = 0.0f;
    XF86VidModeModeInfo **modes = NULL;
+   settings_t *settings        = config_get_ptr();
+   unsigned black_frame_insertion  = settings->uints.video_black_frame_insertion;
+   float video_refresh_rate    = settings->floats.video_refresh_rate;
 
    XF86VidModeGetAllModeLines(dpy, DefaultScreen(dpy), &num_modes, &modes);
 
@@ -278,7 +283,7 @@ static bool get_video_mode(video_frame_info_t *video_info,
 
    /* If we use black frame insertion, we fake a 60 Hz monitor
     * for 120 Hz one, etc, so try to match that. */
-   refresh_mod = video_info->black_frame_insertion ? 0.5f : 1.0f;
+   refresh_mod = 1.0f / (black_frame_insertion + 1.0f);
 
    for (i = 0; i < num_modes; i++)
    {
@@ -294,7 +299,7 @@ static bool get_video_mode(video_frame_info_t *video_info,
          continue;
 
       refresh = refresh_mod * m->dotclock * 1000.0f / (m->htotal * m->vtotal);
-      diff    = fabsf(refresh - video_info->refresh_rate);
+      diff    = fabsf(refresh - video_refresh_rate);
 
       if (!ret || diff < minimum_fps_diff)
       {
@@ -308,13 +313,13 @@ static bool get_video_mode(video_frame_info_t *video_info,
    return ret;
 }
 
-bool x11_enter_fullscreen(video_frame_info_t *video_info,
+bool x11_enter_fullscreen(
       Display *dpy, unsigned width,
       unsigned height)
 {
    XF86VidModeModeInfo mode;
 
-   if (!get_video_mode(video_info, dpy, width, height, &mode, &desktop_mode))
+   if (!get_video_mode(dpy, width, height, &mode, &desktop_mode))
       return false;
 
    if (!XF86VidModeSwitchToMode(dpy, DefaultScreen(dpy), &mode))
@@ -387,6 +392,12 @@ bool x11_get_metrics(void *data,
 
    switch (type)
    {
+      case DISPLAY_METRIC_PIXEL_WIDTH:
+         *value = (float)pixels_x;
+         break;
+      case DISPLAY_METRIC_PIXEL_HEIGHT:
+         *value = (float)pixels_y;
+         break;
       case DISPLAY_METRIC_MM_WIDTH:
          *value = (float)physical_width;
          break;
@@ -405,7 +416,7 @@ bool x11_get_metrics(void *data,
    return true;
 }
 
-static void x11_handle_key_event(XEvent *event, XIC ic, bool filter)
+static void x11_handle_key_event(unsigned keycode, XEvent *event, XIC ic, bool filter)
 {
    int i;
    Status status;
@@ -419,6 +430,7 @@ static void x11_handle_key_event(XEvent *event, XIC ic, bool filter)
 
    chars[0]       = '\0';
 
+   /* this code generates the localized chars using keysyms */
    if (!filter)
    {
       if (down)
@@ -455,7 +467,9 @@ static void x11_handle_key_event(XEvent *event, XIC ic, bool filter)
    if (keysym >= XK_A && keysym <= XK_Z)
        keysym += XK_z - XK_Z;
 
-   key   = input_keymaps_translate_keysym_to_rk(keysym);
+   /* Get the real keycode,
+      that correctly ignores international layouts as windows code does. */
+   key     = input_keymaps_translate_keysym_to_rk(keycode);
 
    if (state & ShiftMask)
       mod |= RETROKMOD_SHIFT;
@@ -465,10 +479,10 @@ static void x11_handle_key_event(XEvent *event, XIC ic, bool filter)
       mod |= RETROKMOD_CTRL;
    if (state & Mod1Mask)
       mod |= RETROKMOD_ALT;
+   if (state & Mod2Mask)
+      mod |= RETROKMOD_NUMLOCK;
    if (state & Mod4Mask)
       mod |= RETROKMOD_META;
-   if (IsKeypadKey(keysym))
-      mod |= RETROKMOD_NUMLOCK;
 
    input_keyboard_event(down, key, chars[0], mod, RETRO_DEVICE_KEYBOARD);
 
@@ -483,9 +497,14 @@ bool x11_alive(void *data)
    {
       XEvent event;
       bool filter = false;
+      unsigned keycode = 0;
 
       /* Can get events from older windows. Check this. */
       XNextEvent(g_x11_dpy, &event);
+
+      /* IMPORTANT - Get keycode before XFilterEvent
+         because the event is localizated after the call */
+      keycode = event.xkey.keycode;
       filter = XFilterEvent(&event, g_x11_win);
 
       switch (event.type)
@@ -529,6 +548,8 @@ bool x11_alive(void *data)
                case 4: /* Grabbed  */
                        /* Scroll up */
                case 5: /* Scroll down */
+               case 6: /* Scroll wheel left */
+               case 7: /* Scroll wheel right */
                   x_input_poll_wheel(&event.xbutton, true);
                   break;
             }
@@ -545,10 +566,24 @@ bool x11_alive(void *data)
          case ButtonRelease:
             break;
 
-         case KeyPress:
          case KeyRelease:
+            /*  When you receive a key release and the next event is a key press
+               of the same key combination, then it's auto-repeat and the
+               key wasn't actually released. */
+            if(XEventsQueued(g_x11_dpy, QueuedAfterReading))
+            {
+               XEvent next_event;
+               XPeekEvent(g_x11_dpy, &next_event);
+               if (next_event.type == KeyPress &&
+                   next_event.xkey.time == event.xkey.time &&
+                   next_event.xkey.keycode == event.xkey.keycode)
+               {
+                  break; /* Key wasn't actually released */
+               }
+            }
+         case KeyPress:
             if (event.xkey.window == g_x11_win)
-               x11_handle_key_event(&event, g_x11_xic, filter);
+               x11_handle_key_event(keycode, &event, g_x11_xic, filter);
             break;
       }
    }
@@ -557,8 +592,7 @@ bool x11_alive(void *data)
 }
 
 void x11_check_window(void *data, bool *quit,
-   bool *resize, unsigned *width, unsigned *height,
-   bool is_shutdown)
+   bool *resize, unsigned *width, unsigned *height)
 {
    unsigned new_width  = *width;
    unsigned new_height = *height;
@@ -567,9 +601,9 @@ void x11_check_window(void *data, bool *quit,
 
    if (new_width != *width || new_height != *height)
    {
-      *resize = true;
       *width  = new_width;
       *height = new_height;
+      *resize = true;
    }
 
    x11_alive(data);
@@ -638,7 +672,7 @@ bool x11_connect(void)
    return true;
 }
 
-void x11_update_title(void *data, void *data2)
+void x11_update_title(void *data)
 {
    char title[128];
 
@@ -647,7 +681,9 @@ void x11_update_title(void *data, void *data2)
    video_driver_get_window_title(title, sizeof(title));
 
    if (title[0])
-      XStoreName(g_x11_dpy, g_x11_win, title);
+      XChangeProperty(g_x11_dpy, g_x11_win, XA_WM_NAME, XA_STRING,
+            8, PropModeReplace, (const unsigned char*)title,
+            strlen(title));
 }
 
 bool x11_input_ctx_new(bool true_full)
@@ -752,22 +788,21 @@ bool x11_has_net_wm_fullscreen(Display *dpy)
 
 char *x11_get_wm_name(Display *dpy)
 {
+   Atom type;
+   int  format;
+   Window window;
    Atom XA_NET_SUPPORTING_WM_CHECK = XInternAtom(g_x11_dpy, "_NET_SUPPORTING_WM_CHECK", False);
    Atom XA_NET_WM_NAME             = XInternAtom(g_x11_dpy, "_NET_WM_NAME", False);
    Atom XA_UTF8_STRING             = XInternAtom(g_x11_dpy, "UTF8_STRING", False);
-   int status;
-   Atom type;
-   int  format;
-   unsigned long nitems;
-   unsigned long bytes_after;
-   unsigned char *propdata;
-   char *title;
-   Window window;
+   unsigned long nitems            = 0;
+   unsigned long bytes_after       = 0;
+   char *title                     = NULL;
+   unsigned char *propdata         = NULL;
 
    if (!XA_NET_SUPPORTING_WM_CHECK || !XA_NET_WM_NAME)
       return NULL;
 
-   status = XGetWindowProperty(dpy,
+   if (!(XGetWindowProperty(dpy,
                                DefaultRootWindow(dpy),
                                XA_NET_SUPPORTING_WM_CHECK,
                                0,
@@ -778,16 +813,15 @@ char *x11_get_wm_name(Display *dpy)
                                &format,
                                &nitems,
                                &bytes_after,
-                               &propdata);
+                               &propdata) == Success &&
+		   propdata))
+	   return NULL;
 
-   if (status == Success && propdata)
-      window = ((Window *) propdata)[0];
-   else
-      return NULL;
+   window = ((Window *) propdata)[0];
 
    XFree(propdata);
 
-   status = XGetWindowProperty(dpy,
+   if (!(XGetWindowProperty(dpy,
                                window,
                                XA_NET_WM_NAME,
                                0,
@@ -798,15 +832,12 @@ char *x11_get_wm_name(Display *dpy)
                                &format,
                                &nitems,
                                &bytes_after,
-                               &propdata);
+                               &propdata) == Success
+		   && propdata))
+	   return NULL;
 
-   if (status == Success && propdata)
-      title = strdup((char *) propdata);
-   else
-      return NULL;
-
+   title = strdup((char *) propdata);
    XFree(propdata);
 
    return title;
 }
-

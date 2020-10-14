@@ -24,7 +24,7 @@
 #include <queues/fifo_queue.h>
 #include <string/stdstring.h>
 
-#include "../audio_driver.h"
+#include "../../retroarch.h"
 #include "../../verbosity.h"
 
 #define TRY_ALSA(x) if (x < 0) \
@@ -33,20 +33,18 @@
 typedef struct alsa_thread
 {
    snd_pcm_t *pcm;
-   bool nonblock;
-   bool is_paused;
-   bool has_float;
-   volatile bool thread_dead;
-
-   size_t buffer_size;
-   size_t period_size;
-   snd_pcm_uframes_t period_frames;
-
    fifo_buffer_t *buffer;
    sthread_t *worker_thread;
    slock_t *fifo_lock;
    scond_t *cond;
    slock_t *cond_lock;
+   size_t buffer_size;
+   size_t period_size;
+   snd_pcm_uframes_t period_frames;
+   bool nonblock;
+   bool is_paused;
+   bool has_float;
+   volatile bool thread_dead;
 } alsa_thread_t;
 
 static void alsa_worker_thread(void *data)
@@ -66,7 +64,7 @@ static void alsa_worker_thread(void *data)
       size_t fifo_size;
       snd_pcm_sframes_t frames;
       slock_lock(alsa->fifo_lock);
-      avail = fifo_read_avail(alsa->buffer);
+      avail     = FIFO_READ_AVAIL(alsa->buffer);
       fifo_size = MIN(alsa->period_size, avail);
       fifo_read(alsa->buffer, buf, fifo_size);
       scond_signal(alsa->cond);
@@ -256,7 +254,7 @@ static ssize_t alsa_thread_write(void *data, const void *buf, size_t size)
       size_t write_amt;
 
       slock_lock(alsa->fifo_lock);
-      avail           = fifo_write_avail(alsa->buffer);
+      avail           = FIFO_WRITE_AVAIL(alsa->buffer);
       write_amt       = MIN(avail, size);
 
       fifo_write(alsa->buffer, buf, write_amt);
@@ -271,7 +269,7 @@ static ssize_t alsa_thread_write(void *data, const void *buf, size_t size)
       {
          size_t avail;
          slock_lock(alsa->fifo_lock);
-         avail = fifo_write_avail(alsa->buffer);
+         avail = FIFO_WRITE_AVAIL(alsa->buffer);
 
          if (avail == 0)
          {
@@ -334,7 +332,7 @@ static size_t alsa_thread_write_avail(void *data)
    if (alsa->thread_dead)
       return 0;
    slock_lock(alsa->fifo_lock);
-   val = fifo_write_avail(alsa->buffer);
+   val = FIFO_WRITE_AVAIL(alsa->buffer);
    slock_unlock(alsa->fifo_lock);
    return val;
 }
@@ -345,7 +343,7 @@ static size_t alsa_thread_buffer_size(void *data)
    return alsa->buffer_size;
 }
 
-static void *alsa_device_list_new(void *data)
+static void *alsa_thread_device_list_new(void *data)
 {
    void **hints, **n;
    union string_list_elem_attr attr;
@@ -361,7 +359,7 @@ static void *alsa_device_list_new(void *data)
 
    n      = hints;
 
-   while (*n != NULL)
+   while (*n)
    {
       char *name = snd_device_name_get_hint(*n, "NAME");
       char *io   = snd_device_name_get_hint(*n, "IOID");
@@ -393,7 +391,7 @@ error:
    return NULL;
 }
 
-static void alsa_device_list_free(void *data, void *array_list_data)
+static void alsa_thread_device_list_free(void *data, void *array_list_data)
 {
    struct string_list *s = (struct string_list*)array_list_data;
 
@@ -413,8 +411,8 @@ audio_driver_t audio_alsathread = {
    alsa_thread_free,
    alsa_thread_use_float,
    "alsathread",
-   alsa_device_list_new,
-   alsa_device_list_free,
+   alsa_thread_device_list_new,
+   alsa_thread_device_list_free,
    alsa_thread_write_avail,
    alsa_thread_buffer_size,
 };

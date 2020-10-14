@@ -1,6 +1,6 @@
-﻿/*  RetroArch - A frontend for libretro.
+/*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- *  Copyright (C) 2016-2017 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -25,13 +25,15 @@
 #include "../configuration.h"
 #include "../verbosity.h"
 
-#if defined(_MSC_VER) && !defined(_XBOX)
+#if defined(_MSC_VER) && !defined(_XBOX) && (_MSC_VER >= 1500 && _MSC_VER < 1900)
+#if (_MSC_VER >= 1700)
 /* https://support.microsoft.com/en-us/kb/980263 */
 #pragma execution_character_set("utf-8")
-#pragma warning(disable: 4566)
+#endif
+#pragma warning(disable:4566)
 #endif
 
-int menu_hash_get_help_ar_enum(enum msg_hash_enums msg, char *s, size_t len)
+int msg_hash_get_help_ar_enum(enum msg_hash_enums msg, char *s, size_t len)
 {
     settings_t *settings = config_get_ptr();
 
@@ -209,7 +211,7 @@ int menu_hash_get_help_ar_enum(enum msg_hash_enums msg, char *s, size_t len)
                    " \n"
                    "Rewinding must be enabled.");
              break;
-          case RARCH_MOVIE_RECORD_TOGGLE:
+          case RARCH_BSV_RECORD_TOGGLE:
              snprintf(s, len,
                    "Toggle between recording and not.");
              break;
@@ -696,24 +698,24 @@ int menu_hash_get_help_ar_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "To scan for content, go to '%s' and\n"
                              "select either '%s' or %s'.\n"
-                             " \n"
+                             "\n"
                              "Files will be compared to database entries.\n"
                              "If there is a match, it will add an entry\n"
-                             "to a collection.\n"
-                             " \n"
+                             "to a playlist.\n"
+                             "\n"
                              "You can then easily access this content by\n"
                              "going to '%s' ->\n"
                              "'%s'\n"
                              "instead of having to go through the\n"
-                             "filebrowser everytime.\n"
-                             " \n"
+                             "file browser everytime.\n"
+                             "\n"
                              "NOTE: Content for some cores might still not be\n"
                              "scannable.",
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_ADD_CONTENT_LIST),
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SCAN_DIRECTORY),
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SCAN_FILE),
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_LOAD_CONTENT_LIST),
-                     msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CONTENT_COLLECTION_LIST)
+                     msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLISTS_TAB)
             );
             break;
         case MENU_ENUM_LABEL_VALUE_EXTRACTING_PLEASE_WAIT:
@@ -796,83 +798,86 @@ int menu_hash_get_help_ar_enum(enum msg_hash_enums msg, char *s, size_t len)
             );
             break;
         case MENU_ENUM_LABEL_VIDEO_DRIVER:
-            snprintf(s, len,
+            {
+               const char *video_driver = settings->arrays.video_driver;
+               snprintf(s, len,
                      "Current Video driver.");
 
-            if (string_is_equal(settings->arrays.video_driver, "gl"))
-            {
-                snprintf(s, len,
-                         "OpenGL Video driver. \n"
-                                 " \n"
-                                 "This driver allows libretro GL cores to  \n"
-                                 "be used in addition to software-rendered \n"
-                                 "core implementations.\n"
-                                 " \n"
-                                 "Performance for software-rendered and \n"
-                                 "libretro GL core implementations is \n"
-                                 "dependent on your graphics card's \n"
-                                 "underlying GL driver).");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "sdl2"))
-            {
-                snprintf(s, len,
-                         "SDL 2 Video driver.\n"
-                                 " \n"
-                                 "This is an SDL 2 software-rendered video \n"
-                                 "driver.\n"
-                                 " \n"
-                                 "Performance for software-rendered libretro \n"
-                                 "core implementations is dependent \n"
-                                 "on your platform SDL implementation.");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "sdl1"))
-            {
-                snprintf(s, len,
-                         "SDL Video driver.\n"
-                                 " \n"
-                                 "This is an SDL 1.2 software-rendered video \n"
-                                 "driver.\n"
-                                 " \n"
-                                 "Performance is considered to be suboptimal. \n"
-                                 "Consider using it only as a last resort.");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "d3d"))
-            {
-                snprintf(s, len,
-                         "Direct3D Video driver. \n"
-                                 " \n"
-                                 "Performance for software-rendered cores \n"
-                                 "is dependent on your graphic card's \n"
-                                 "underlying D3D driver).");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "exynos"))
-            {
-                snprintf(s, len,
-                         "Exynos-G2D Video Driver. \n"
-                                 " \n"
-                                 "This is a low-level Exynos video driver. \n"
-                                 "Uses the G2D block in Samsung Exynos SoC \n"
-                                 "for blit operations. \n"
-                                 " \n"
-                                 "Performance for software rendered cores \n"
-                                 "should be optimal.");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "drm"))
-            {
-                snprintf(s, len,
-                         "Plain DRM Video Driver. \n"
-                                 " \n"
-                                 "This is a low-level video driver using. \n"
-                                 "libdrm for hardware scaling using \n"
-                                 "GPU overlays.");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "sunxi"))
-            {
-                snprintf(s, len,
-                         "Sunxi-G2D Video Driver. \n"
-                                 " \n"
-                                 "This is a low-level Sunxi video driver. \n"
-                                 "Uses the G2D block in Allwinner SoCs.");
+               if (string_is_equal(video_driver, "gl"))
+               {
+                  snprintf(s, len,
+                        "OpenGL Video driver. \n"
+                        " \n"
+                        "This driver allows libretro GL cores to  \n"
+                        "be used in addition to software-rendered \n"
+                        "core implementations.\n"
+                        " \n"
+                        "Performance for software-rendered and \n"
+                        "libretro GL core implementations is \n"
+                        "dependent on your graphics card's \n"
+                        "underlying GL driver).");
+               }
+               else if (string_is_equal(video_driver, "sdl2"))
+               {
+                  snprintf(s, len,
+                        "SDL 2 Video driver.\n"
+                        " \n"
+                        "This is an SDL 2 software-rendered video \n"
+                        "driver.\n"
+                        " \n"
+                        "Performance for software-rendered libretro \n"
+                        "core implementations is dependent \n"
+                        "on your platform SDL implementation.");
+               }
+               else if (string_is_equal(video_driver, "sdl1"))
+               {
+                  snprintf(s, len,
+                        "SDL Video driver.\n"
+                        " \n"
+                        "This is an SDL 1.2 software-rendered video \n"
+                        "driver.\n"
+                        " \n"
+                        "Performance is considered to be suboptimal. \n"
+                        "Consider using it only as a last resort.");
+               }
+               else if (string_is_equal(video_driver, "d3d"))
+               {
+                  snprintf(s, len,
+                        "Direct3D Video driver. \n"
+                        " \n"
+                        "Performance for software-rendered cores \n"
+                        "is dependent on your graphic card's \n"
+                        "underlying D3D driver).");
+               }
+               else if (string_is_equal(video_driver, "exynos"))
+               {
+                  snprintf(s, len,
+                        "Exynos-G2D Video Driver. \n"
+                        " \n"
+                        "This is a low-level Exynos video driver. \n"
+                        "Uses the G2D block in Samsung Exynos SoC \n"
+                        "for blit operations. \n"
+                        " \n"
+                        "Performance for software rendered cores \n"
+                        "should be optimal.");
+               }
+               else if (string_is_equal(video_driver, "drm"))
+               {
+                  snprintf(s, len,
+                        "Plain DRM Video Driver. \n"
+                        " \n"
+                        "This is a low-level video driver using. \n"
+                        "libdrm for hardware scaling using \n"
+                        "GPU overlays.");
+               }
+               else if (string_is_equal(video_driver, "sunxi"))
+               {
+                  snprintf(s, len,
+                        "Sunxi-G2D Video Driver. \n"
+                        " \n"
+                        "This is a low-level Sunxi video driver. \n"
+                        "Uses the G2D block in Allwinner SoCs.");
+               }
             }
             break;
         case MENU_ENUM_LABEL_AUDIO_DSP_PLUGIN:
@@ -1499,14 +1504,6 @@ int menu_hash_get_help_ar_enum(enum msg_hash_enums msg, char *s, size_t len)
                              "When slowmotion, content will slow\n"
                              "down by factor.");
             break;
-        case MENU_ENUM_LABEL_INPUT_AXIS_THRESHOLD:
-            snprintf(s, len,
-                     "Defines axis threshold.\n"
-                             " \n"
-                             "How far an axis must be tilted to result\n"
-                             "in a button press.\n"
-                             " Possible values are [0.0, 1.0].");
-            break;
         case MENU_ENUM_LABEL_INPUT_TURBO_PERIOD:
             snprintf(s, len,
                      "Turbo period.\n"
@@ -1688,6 +1685,15 @@ int menu_hash_get_help_ar_enum(enum msg_hash_enums msg, char *s, size_t len)
                      "Smoothens picture with bilinear filtering. \n"
                              "Should be disabled if using shaders.");
             break;
+      case MENU_ENUM_LABEL_VIDEO_CTX_SCALING:
+         snprintf(s, len,
+#ifdef HAVE_ODROIDGO2
+               "RGA scaling and bicubic filtering. May break widgets."
+#else
+               "Hardware context scaling (if available)."
+#endif
+         );
+         break;
         case MENU_ENUM_LABEL_TIMEDATE_ENABLE:
             snprintf(s, len,
                      "Shows current date and/or time inside menu.");
@@ -1929,7 +1935,7 @@ int menu_hash_get_help_ar_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "Frame advance when content is paused.");
             break;
-        case MENU_ENUM_LABEL_MOVIE_RECORD_TOGGLE:
+        case MENU_ENUM_LABEL_BSV_RECORD_TOGGLE:
             snprintf(s, len,
                      "Toggle between recording and not.");
             break;

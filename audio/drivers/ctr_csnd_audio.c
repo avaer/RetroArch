@@ -19,12 +19,12 @@
 #include <retro_miscellaneous.h>
 #include <retro_timers.h>
 
-#include "../audio_driver.h"
+#include "../../retroarch.h"
 
 typedef struct
 {
-   bool nonblocking;
-   bool playing;
+   uint64_t cpu_ticks_last;
+
    int16_t* l;
    int16_t* r;
 
@@ -34,7 +34,8 @@ typedef struct
    uint32_t pos;
 
    uint32_t playpos;
-   uint64_t cpu_ticks_last;
+   bool nonblock;
+   bool playing;
 } ctr_csnd_audio_t;
 
 #define CTR_CSND_AUDIO_COUNT       (1u << 11u)
@@ -55,7 +56,6 @@ static void ctr_csnd_audio_update_playpos(ctr_csnd_audio_t* ctr)
    ctr->playpos   = (ctr->playpos + samples_played) & CTR_CSND_AUDIO_COUNT_MASK;
    ctr->cpu_ticks_last += samples_played * CTR_CSND_CPU_TICKS_PER_SAMPLE;
 }
-
 
 Result csndPlaySound_custom(int chn, u32 flags, float vol, float pan,
       void* data0, void* data1, u32 size)
@@ -181,7 +181,7 @@ static ssize_t ctr_csnd_audio_write(void *data, const void *buf, size_t size)
       (((ctr->pos - ctr->playpos ) & CTR_CSND_AUDIO_COUNT_MASK) < (CTR_CSND_AUDIO_COUNT >> 4)) ||
       (((ctr->playpos  - ctr->pos) & CTR_CSND_AUDIO_COUNT_MASK) < (size >> 2)))
    {
-      if (ctr->nonblocking)
+      if (ctr->nonblock)
          ctr->pos = (ctr->playpos + (CTR_CSND_AUDIO_COUNT >> 1)) & CTR_CSND_AUDIO_COUNT_MASK;
       else
       {
@@ -190,7 +190,7 @@ static ssize_t ctr_csnd_audio_write(void *data, const void *buf, size_t size)
             retro_sleep(1);
             ctr_csnd_audio_update_playpos(ctr);
          }while (((ctr->playpos - ctr->pos) & CTR_CSND_AUDIO_COUNT_MASK) < (CTR_CSND_AUDIO_COUNT >> 1)
-                 || (((ctr->pos - ctr->playpos) & CTR_CSND_AUDIO_COUNT_MASK) < (CTR_CSND_AUDIO_COUNT >> 4)));
+               || (((ctr->pos - ctr->playpos) & CTR_CSND_AUDIO_COUNT_MASK) < (CTR_CSND_AUDIO_COUNT >> 4)));
       }
    }
 
@@ -266,7 +266,7 @@ static void ctr_csnd_audio_set_nonblock_state(void *data, bool state)
 {
    ctr_csnd_audio_t* ctr = (ctr_csnd_audio_t*)data;
    if (ctr)
-      ctr->nonblocking = state;
+      ctr->nonblock = state;
 }
 
 static bool ctr_csnd_audio_use_float(void *data)
@@ -288,7 +288,6 @@ static size_t ctr_csnd_audio_buffer_size(void *data)
    (void)data;
    return CTR_CSND_AUDIO_COUNT;
 }
-
 
 audio_driver_t audio_ctr_csnd = {
    ctr_csnd_audio_init,

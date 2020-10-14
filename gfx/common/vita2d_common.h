@@ -25,7 +25,7 @@
 
 #include "../../defines/psp_defines.h"
 #include "../../driver.h"
-#include "../video_driver.h"
+#include "../../retroarch.h"
 #include "../video_coord_array.h"
 
 typedef struct vita_menu_frame
@@ -83,6 +83,9 @@ typedef struct vita_video
    bool overlay_enable;
    bool overlay_full_screen;
 #endif
+
+   unsigned video_width;
+   unsigned video_height;
 
 } vita_video_t;
 

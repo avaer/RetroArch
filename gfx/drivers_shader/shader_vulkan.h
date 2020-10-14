@@ -23,28 +23,13 @@
 #include <boolean.h>
 #include <retro_common_api.h>
 
+#include "glslang_util.h"
+
 #include "../common/vulkan_common.h"
 
 RETRO_BEGIN_DECLS
 
 typedef struct vulkan_filter_chain vulkan_filter_chain_t;
-
-enum vulkan_filter_chain_filter
-{
-   VULKAN_FILTER_CHAIN_LINEAR  = 0,
-   VULKAN_FILTER_CHAIN_NEAREST = 1,
-   VULKAN_FILTER_CHAIN_COUNT
-};
-
-enum vulkan_filter_chain_address
-{
-   VULKAN_FILTER_CHAIN_ADDRESS_REPEAT               = 0,
-   VULKAN_FILTER_CHAIN_ADDRESS_MIRRORED_REPEAT      = 1,
-   VULKAN_FILTER_CHAIN_ADDRESS_CLAMP_TO_EDGE        = 2,
-   VULKAN_FILTER_CHAIN_ADDRESS_CLAMP_TO_BORDER      = 3,
-   VULKAN_FILTER_CHAIN_ADDRESS_MIRROR_CLAMP_TO_EDGE = 4,
-   VULKAN_FILTER_CHAIN_ADDRESS_COUNT
-};
 
 struct vulkan_filter_chain_texture
 {
@@ -53,35 +38,28 @@ struct vulkan_filter_chain_texture
    VkImageLayout layout;
    unsigned width;
    unsigned height;
-};
-
-enum vulkan_filter_chain_scale
-{
-   VULKAN_FILTER_CHAIN_SCALE_ORIGINAL,
-   VULKAN_FILTER_CHAIN_SCALE_SOURCE,
-   VULKAN_FILTER_CHAIN_SCALE_VIEWPORT,
-   VULKAN_FILTER_CHAIN_SCALE_ABSOLUTE
+   VkFormat format;
 };
 
 struct vulkan_filter_chain_pass_info
 {
-   /* For the last pass, make sure VIEWPORT scale
-    * with scale factors of 1 are used. */
-   enum vulkan_filter_chain_scale scale_type_x;
-   enum vulkan_filter_chain_scale scale_type_y;
+   /* Maximum number of mip-levels to use. */
+   unsigned max_levels;
+
    float scale_x;
    float scale_y;
 
-   /* Ignored for the last pass, swapchain info will be used instead. */
+   /* Ignored for the last pass, swapchain info 
+    * will be used instead. */
    VkFormat rt_format;
-
+   /* For the last pass, make sure VIEWPORT scale
+    * with scale factors of 1 are used. */
+   enum glslang_filter_chain_scale scale_type_x;
+   enum glslang_filter_chain_scale scale_type_y;
    /* The filter to use for source in this pass. */
-   enum vulkan_filter_chain_filter source_filter;
-   enum vulkan_filter_chain_filter mip_filter;
-   enum vulkan_filter_chain_address address;
-
-   /* Maximum number of mip-levels to use. */
-   unsigned max_levels;
+   enum glslang_filter_chain_filter source_filter;
+   enum glslang_filter_chain_filter mip_filter;
+   enum glslang_filter_chain_address address;
 };
 
 struct vulkan_filter_chain_swapchain_info
@@ -142,6 +120,9 @@ void vulkan_filter_chain_set_frame_count_period(vulkan_filter_chain_t *chain,
       unsigned pass,
       unsigned period);
 
+void vulkan_filter_chain_set_frame_direction(vulkan_filter_chain_t *chain,
+      int32_t direction);
+
 void vulkan_filter_chain_set_pass_name(vulkan_filter_chain_t *chain,
       unsigned pass,
       const char *name);
@@ -155,11 +136,11 @@ void vulkan_filter_chain_end_frame(vulkan_filter_chain_t *chain,
 
 vulkan_filter_chain_t *vulkan_filter_chain_create_default(
       const struct vulkan_filter_chain_create_info *info,
-      enum vulkan_filter_chain_filter filter);
+      enum glslang_filter_chain_filter filter);
 
 vulkan_filter_chain_t *vulkan_filter_chain_create_from_preset(
       const struct vulkan_filter_chain_create_info *info,
-      const char *path, enum vulkan_filter_chain_filter filter);
+      const char *path, enum glslang_filter_chain_filter filter);
 
 struct video_shader *vulkan_filter_chain_get_preset(
       vulkan_filter_chain_t *chain);
@@ -167,4 +148,3 @@ struct video_shader *vulkan_filter_chain_get_preset(
 RETRO_END_DECLS
 
 #endif
-

@@ -28,11 +28,13 @@
                   <li class="nav-item dropdown">
                         <button class="btn btn-primary dropdown-toggle" type="button" id="dropdownMenu1" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Core Selection</button>
                         <div class="dropdown-menu dropdown-primary" aria-labelledby="dropdownMenu1" data-dropdown-in="fadeIn" data-dropdown-out="fadeOut" id="core-selector">
+                          <a class="dropdown-item" href="." data-core="chailove">ChaiLove</a>
                           <a class="dropdown-item" href="." data-core="fceumm">FCEUmm</a>
                           <a class="dropdown-item" href="." data-core="gambatte">Gambatte</a>
                           <a class="dropdown-item" href="." data-core="genesis_plus_gx">Genesis Plus GX</a>
                           <a class="dropdown-item" href="." data-core="nestopia">Nestopia (NES)</a>
                           <a class="dropdown-item" href="." data-core="snes9x2010">Snes9x 2010 (SNES)</a>
+                          <a class="dropdown-item" href="." data-core="theodore">Theodore (Thomson TO8/TO9)</a>
                           <a class="dropdown-item" href="." data-core="vba_next">VBA Next (Gameboy Advance)</a>
                         </div>
                         <button class="btn btn-primary disabled" id="btnRun" onclick="startRetroArch()" disabled>
@@ -48,11 +50,11 @@
                         </button>
 
                         <input class="btn btn-primary disabled" style="display: none" type="file" id="btnRom" name="upload" onclick="document.getElementById('btnAdd').click();" onchange="selectFiles(event.target.files)" multiple />
-                        <button class="btn btn-primary disabled tooltip-enable" id="btnMenu" onclick="keyPress(112);" title="Menu toggle" disabled>
+                        <button class="btn btn-primary disabled tooltip-enable" id="btnMenu" onclick="keyPress('F1');" title="Menu toggle" disabled>
                            <span class="fa fa-bars" id="btnMenu"></span> <span class="sr-only">Menu</span>
                         </button>
 
-                        <button class="btn btn-primary disabled tooltip-enable" id="btnFullscreen" onclick="Module.requestFullScreen()" title="Fullscreen" disabled>
+                        <button class="btn btn-primary disabled tooltip-enable" id="btnFullscreen" onclick="Module.requestFullscreen(false)" title="Fullscreen" disabled>
                            <span class="fa fa-desktop" id="icnAdd"></span> <span class="sr-only">Fullscreen</span>
                         </button>
 

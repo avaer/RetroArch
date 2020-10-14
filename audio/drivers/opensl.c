@@ -21,7 +21,7 @@
 
 #include <rthreads/rthreads.h>
 
-#include "../audio_driver.h"
+#include "../../retroarch.h"
 
 /* Helper macros, COM-style. */
 #define SLObjectItf_Realize(a, ...) ((*(a))->Realize(a, __VA_ARGS__))
@@ -37,9 +37,6 @@ typedef struct sl
 {
    uint8_t **buffer;
    uint8_t *buffer_chunk;
-   unsigned buffer_index;
-   unsigned buffer_ptr;
-   volatile unsigned buffered_blocks;
 
    SLObjectItf engine_object;
    SLEngineItf engine;
@@ -51,10 +48,13 @@ typedef struct sl
 
    slock_t *lock;
    scond_t *cond;
-   bool nonblock;
-   bool is_paused;
    unsigned buf_size;
    unsigned buf_count;
+   unsigned buffer_index;
+   unsigned buffer_ptr;
+   volatile unsigned buffered_blocks;
+   bool nonblock;
+   bool is_paused;
 } sl_t;
 
 static void opensl_callback(SLAndroidSimpleBufferQueueItf bq, void *ctx)
@@ -67,7 +67,7 @@ static void opensl_callback(SLAndroidSimpleBufferQueueItf bq, void *ctx)
 #define GOTO_IF_FAIL(x) do { \
    if ((res = (x)) != SL_RESULT_SUCCESS) \
       goto error; \
-} while(0)
+} while (0)
 
 static void sl_free(void *data)
 {
@@ -152,7 +152,7 @@ static void *sl_init(const char *device, unsigned rate, unsigned latency,
 
    fmt_pcm.formatType     = SL_DATAFORMAT_PCM;
    fmt_pcm.numChannels    = 2;
-   fmt_pcm.samplesPerSec  = rate * 1000; // Samplerate is in milli-Hz.
+   fmt_pcm.samplesPerSec  = rate * 1000; /* Samplerate is in milli-Hz. */
    fmt_pcm.bitsPerSample  = 16;
    fmt_pcm.containerSize  = 16;
    fmt_pcm.channelMask    = SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT;
@@ -231,7 +231,6 @@ static bool sl_start(void *data, bool is_shutdown)
          == SL_RESULT_SUCCESS) ? false : true;
    return sl->is_paused ? false : true;
 }
-
 
 static ssize_t sl_write(void *data, const void *buf_, size_t size)
 {

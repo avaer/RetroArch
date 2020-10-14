@@ -619,7 +619,7 @@ static void sunxi_vsync_thread_func(void *data)
 }
 
 static void *sunxi_gfx_init(const video_info_t *video,
-      const input_driver_t **input, void **input_data)
+      input_driver_t **input, void **input_data)
 {
    struct sunxi_video *_dispvars = (struct sunxi_video*)
       calloc(1, sizeof(struct sunxi_video));
@@ -776,6 +776,9 @@ static bool sunxi_gfx_frame(void *data, const void *frame, unsigned width,
       video_frame_info_t *video_info)
 {
    struct sunxi_video *_dispvars = (struct sunxi_video*)data;
+#ifdef HAVE_MENU
+   bool menu_is_alive            = video_info->menu_is_alive;
+#endif
 
    if (_dispvars->src_width != width || _dispvars->src_height != height)
    {
@@ -783,14 +786,11 @@ static bool sunxi_gfx_frame(void *data, const void *frame, unsigned width,
       if (width == 0 || height == 0)
          return true;
 
-      RARCH_LOG("video_sunxi: internal resolution changed by core: %ux%u -> %ux%u\n",
-            _dispvars->src_width, _dispvars->src_height, width, height);
-
       sunxi_setup_scale(_dispvars, width, height, pitch);
    }
 
 #ifdef HAVE_MENU
-   menu_driver_frame(video_info);
+   menu_driver_frame(menu_is_alive, video_info);
 #endif
 
    if (_dispvars->menu_active)
@@ -804,13 +804,7 @@ static bool sunxi_gfx_frame(void *data, const void *frame, unsigned width,
    return true;
 }
 
-static void sunxi_gfx_set_nonblock_state(void *data, bool state)
-{
-   struct sunxi_video *vid = data;
-
-   (void)vid;
-   (void)state;
-}
+static void sunxi_gfx_set_nonblock_state(void *a, bool b, bool c, unsigned d) { }
 
 static bool sunxi_gfx_alive(void *data)
 {
@@ -822,12 +816,6 @@ static bool sunxi_gfx_focus(void *data)
 {
    (void)data;
    return true; /* fb device always has focus */
-}
-
-static void sunxi_gfx_set_rotation(void *data, unsigned rotation)
-{
-   (void)data;
-   (void)rotation;
 }
 
 static bool sunxi_gfx_suppress_screensaver(void *data, bool enable)
@@ -922,7 +910,7 @@ static void sunxi_set_texture_frame(void *data, const void *frame, bool rgb32,
    }
 }
 
-static void sunxi_set_aspect_ratio (void *data, unsigned aspect_ratio_idx)
+static void sunxi_set_aspect_ratio(void *data, unsigned aspect_ratio_idx)
 {
    struct sunxi_video *_dispvars = (struct sunxi_video*)data;
    float              new_aspect = aspectratio_lut[aspect_ratio_idx].value;
@@ -944,8 +932,6 @@ static float sunxi_get_refresh_rate (void *data)
 
 static const video_poke_interface_t sunxi_poke_interface = {
    NULL, /* get_flags */
-   NULL, /* set_coords */
-   NULL, /* set_mvp */
    NULL,
    NULL,
    NULL, /* set_video_mode */
@@ -987,13 +973,16 @@ video_driver_t video_sunxi = {
   sunxi_gfx_free,
   "sunxi",
   NULL, /* set_viewport */
-  sunxi_gfx_set_rotation,
+  NULL, /* set_rotation */
   sunxi_gfx_viewport_info,
   NULL, /* read_viewport */
   NULL, /* read_frame_raw */
 
 #ifdef HAVE_OVERLAY
   NULL, /* overlay_interface */
+#endif
+#ifdef HAVE_VIDEO_LAYOUT
+  NULL,
 #endif
   sunxi_gfx_get_poke_interface
 };

@@ -27,7 +27,7 @@
 #include <retro_common_api.h>
 #include <retro_inline.h>
 
-#include "../video_driver.h"
+#include "../../retroarch.h"
 
 RETRO_BEGIN_DECLS
 
@@ -39,6 +39,7 @@ extern struct pollfd g_drm_fds;
 
 extern drmModeConnector *g_drm_connector;
 extern drmModeModeInfo *g_drm_mode;
+extern drmModeCrtc *g_orig_crtc;
 
 extern drmEventContext g_drm_evctx;
 
@@ -53,7 +54,7 @@ void drm_setup(int fd);
 
 void drm_free(void);
 
-bool drm_get_connector(int fd, video_frame_info_t *video_info);
+bool drm_get_connector(int fd, unsigned monitor_index);
 
 float drm_get_refresh_rate(void *data);
 

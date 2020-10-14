@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2016 - Daniel De Matteis
- *  Copyright (C) 2016-2017 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -31,70 +31,11 @@
 
 RETRO_BEGIN_DECLS
 
-typedef struct {
+typedef struct
+{
    const char *name;
    int index;
 } blissbox_pad_type_t;
-
-const blissbox_pad_type_t blissbox_pad_types[] =
-{
-   {"A5200", 6},
-   {"A5200_TB", 50},
-   {"A7800", 4},
-   {"ATARI_KEYPAD", 43},
-   {"ATARI", 0},
-   {"ATMARK", 10},
-   {"BALLY", 42},
-   {"CD32", 24},
-   {"CDI", 33},
-   {"COL", 1},
-   {"DC_ASCI", 15},
-   {"DC_PAD", 16},
-   {"FC_ARKANOID", 53},
-   {"FC_NES", 52},
-   {"GC", 9},
-   {"GC_WHEEL", 18},
-   {"GEN_3", 20},
-   {"GEN_6", 21},
-   {"GRAVIS_EX", 38},
-   {"gx4000", 2},
-   {"HAMMERHEAD", 40},
-   {"HPD", 7},
-   {"INTELI", 14},
-   {"JAG", 11},
-   {"MSSW", 39},
-   {"N64", 19},
-   {"NEO", 49},
-   {"NES", 17},
-   {"PADDLES", 41},
-   {"PC_FX", 26},
-   {"PC_GAMEPAD", 46},
-   {"PSX_DIGITAL", 65},
-   {"PSX_DS", 115},
-   {"PSX_DS2", 121},
-   {"PSX_FS", 83},
-   {"PSX_NEGCON", 51},
-   {"PSX_WHEEL", 12},
-   {"SAC", 34},
-   {"SATURN_ANALOG", 8},
-   {"SATURN_DIGITAL", 3},
-   {"SMS", 22},
-   {"SPEEK", 45},
-   {"TG16", 23},
-   {"THREE_DO", 25},
-   {"THREE_DO_ANALOG", 37},
-   {"VEC", 5},
-   {"WII_NUNCHUK", 13},
-   {"ZXSINC", 44},
-   {"NES_ARKANOID", 30},
-   {"NES_GUN", 28},
-   {"NES_POWERPAD", 36},
-   {"SNES", 27},
-   {"V_BOY", 29},
-   {"WII_CLASSIC", 31},
-   {"WII_MPLUS", 32},
-   {NULL, 0}, /* used to mark unconnected ports, do not remove */
-};
 
 RETRO_END_DECLS
 

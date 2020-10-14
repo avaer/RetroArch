@@ -10,6 +10,7 @@
 #define RendererCommon_h
 
 #import <Foundation/Foundation.h>
+#import "ShaderTypes.h"
 
 // TODO(sgc): implement triple buffering
 /*! @brief maximum inflight frames */
@@ -29,16 +30,16 @@
 
 typedef NS_ENUM(NSUInteger, RPixelFormat)
 {
-   
+
    RPixelFormatInvalid,
-   
+
    /* 16-bit formats */
    RPixelFormatBGRA4Unorm,
    RPixelFormatB5G6R5Unorm,
-   
+
    RPixelFormatBGRA8Unorm,
    RPixelFormatBGRX8Unorm, // RetroArch XRGB
-   
+
    RPixelFormatCount,
 };
 
@@ -49,11 +50,12 @@ typedef NS_ENUM(NSUInteger, RTextureFilter)
 {
    RTextureFilterNearest,
    RTextureFilterLinear,
-   
+
    RTextureFilterCount,
 };
 
 extern matrix_float4x4 matrix_proj_ortho(float left, float right, float top, float bottom);
+extern matrix_float4x4 matrix_rotate_z(float rot);
 extern matrix_float4x4 make_matrix_float4x4(const float *v);
 
 #endif /* RendererCommon_h */

@@ -31,6 +31,16 @@ typedef struct audio_thread
    sthread_t *thread;
    slock_t *lock;
    scond_t *cond;
+   const char *device;
+   unsigned *new_rate;
+
+   int inited;
+
+   /* Initialization options. */
+   unsigned out_rate;
+   unsigned latency;
+   unsigned block_frames;
+
    bool alive;
    bool stopped;
    bool stopped_ack;
@@ -38,14 +48,6 @@ typedef struct audio_thread
    bool is_shutdown;
    bool use_float;
 
-   int inited;
-
-   /* Initialization options. */
-   const char *device;
-   unsigned *new_rate;
-   unsigned out_rate;
-   unsigned latency;
-   unsigned block_frames;
 } audio_thread_t;
 
 static void audio_thread_loop(void *data)
@@ -55,8 +57,8 @@ static void audio_thread_loop(void *data)
    if (!thr)
       return;
 
-   RARCH_LOG("[Audio Thread]: Initializing audio driver.\n");
-   thr->driver_data   = thr->driver->init(thr->device, thr->out_rate, thr->latency,
+   thr->driver_data   = thr->driver->init(
+         thr->device, thr->out_rate, thr->latency,
          thr->block_frames, thr->new_rate);
    slock_lock(thr->lock);
    thr->inited        = thr->driver_data ? 1 : -1;
@@ -75,8 +77,6 @@ static void audio_thread_loop(void *data)
       scond_wait(thr->cond, thr->lock);
    slock_unlock(thr->lock);
 
-   RARCH_LOG("[Audio Thread]: Starting audio.\n");
-
    for (;;)
    {
       slock_lock(thr->lock);
@@ -94,7 +94,8 @@ static void audio_thread_loop(void *data)
          thr->driver->stop(thr->driver_data);
          while (thr->stopped)
          {
-            /* If we stop right after start, we might not be able to properly ack.
+            /* If we stop right after start, 
+             * we might not be able to properly ack.
              * Signal in the loop instead. */
             thr->stopped_ack = true;
             scond_signal(thr->cond);
@@ -108,7 +109,6 @@ static void audio_thread_loop(void *data)
       audio_driver_callback();
    }
 
-   RARCH_LOG("[Audio Thread]: Tearing down driver.\n");
    thr->driver->free(thr->driver_data);
 }
 
@@ -300,8 +300,8 @@ bool audio_init_thread(const audio_driver_t **out_driver,
    if (!(thr->lock     = slock_new()))
       goto error;
 
-   thr->alive = true;
-   thr->stopped = true;
+   thr->alive          = true;
+   thr->stopped        = true;
 
    if (!(thr->thread   = sthread_create(audio_thread_loop, thr)))
       goto error;

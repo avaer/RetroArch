@@ -1,6 +1,6 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2017 - Hans-Kristian Arntzen
- * 
+ *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
  *  ation, either version 3 of the License, or (at your option) any later version.
@@ -13,11 +13,17 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef GLSLANG_UTIL_HPP
-#define GLSLANG_UTIL_HPP
+#ifndef GLSLANG_UTIL_H
+#define GLSLANG_UTIL_H
 
 #include <stdint.h>
 #include <retro_common_api.h>
+#include <retro_inline.h>
+
+#include <lists/string_list.h>
+
+#include "slang_reflection.h"
+#include "../video_shader_parse.h"
 
 typedef enum glslang_format
 {
@@ -62,53 +68,71 @@ typedef enum glslang_format
    SLANG_FORMAT_R32G32B32A32_SFLOAT,
 
    SLANG_FORMAT_MAX
-}glslang_format;
+} glslang_format;
+
+typedef enum glslang_filter_chain_filter
+{
+   GLSLANG_FILTER_CHAIN_LINEAR  = 0,
+   GLSLANG_FILTER_CHAIN_NEAREST = 1,
+   GLSLANG_FILTER_CHAIN_COUNT
+} glslang_filter_chain_filter;
+
+typedef enum glslang_filter_chain_address
+{
+   GLSLANG_FILTER_CHAIN_ADDRESS_REPEAT               = 0,
+   GLSLANG_FILTER_CHAIN_ADDRESS_MIRRORED_REPEAT      = 1,
+   GLSLANG_FILTER_CHAIN_ADDRESS_CLAMP_TO_EDGE        = 2,
+   GLSLANG_FILTER_CHAIN_ADDRESS_CLAMP_TO_BORDER      = 3,
+   GLSLANG_FILTER_CHAIN_ADDRESS_MIRROR_CLAMP_TO_EDGE = 4,
+   GLSLANG_FILTER_CHAIN_ADDRESS_COUNT
+} glslang_filter_chain_address;
+
+typedef enum glslang_filter_chain_scale
+{
+   GLSLANG_FILTER_CHAIN_SCALE_ORIGINAL,
+   GLSLANG_FILTER_CHAIN_SCALE_SOURCE,
+   GLSLANG_FILTER_CHAIN_SCALE_VIEWPORT,
+   GLSLANG_FILTER_CHAIN_SCALE_ABSOLUTE
+} glslang_filter_chain_scale;
 
 RETRO_BEGIN_DECLS
 
+static INLINE enum glslang_filter_chain_address rarch_wrap_to_address(
+      enum gfx_wrap_type type)
+{
+   switch (type)
+   {
+      case RARCH_WRAP_BORDER:
+         return GLSLANG_FILTER_CHAIN_ADDRESS_CLAMP_TO_BORDER;
+      case RARCH_WRAP_REPEAT:
+         return GLSLANG_FILTER_CHAIN_ADDRESS_REPEAT;
+      case RARCH_WRAP_MIRRORED_REPEAT:
+         return GLSLANG_FILTER_CHAIN_ADDRESS_MIRRORED_REPEAT;
+      case RARCH_WRAP_EDGE:
+      default:
+         break;
+   }
+
+   return GLSLANG_FILTER_CHAIN_ADDRESS_CLAMP_TO_EDGE;
+}
+
 const char *glslang_format_to_string(glslang_format fmt);
+
+enum glslang_format glslang_find_format(const char *fmt);
+
+bool glslang_read_shader_file(const char *path,
+      struct string_list *output, bool root_file);
+
+bool slang_texture_semantic_is_array(enum slang_texture_semantic sem);
+
+enum slang_texture_semantic slang_name_to_texture_semantic_array(
+      const char *name, const char **names,
+      unsigned *index);
+
+void glslang_build_vec4(float *data, unsigned width, unsigned height);
+
+unsigned glslang_num_miplevels(unsigned width, unsigned height);
 
 RETRO_END_DECLS
 
-#ifdef __cplusplus
-#include <vector>
-#include <string>
-
-struct glslang_parameter
-{
-   std::string id;
-   std::string desc;
-   float initial;
-   float minimum;
-   float maximum;
-   float step;
-};
-
-struct glslang_meta
-{
-   std::vector<glslang_parameter> parameters;
-   std::string name;
-   glslang_format rt_format;
-
-   glslang_meta()
-   {
-	   rt_format = SLANG_FORMAT_UNKNOWN;
-   }
-};
-
-struct glslang_output
-{
-   std::vector<uint32_t> vertex;
-   std::vector<uint32_t> fragment;
-   glslang_meta meta;
-};
-
-bool glslang_compile_shader(const char *shader_path, glslang_output *output);
-
-/* Helpers for internal use. */
-bool glslang_read_shader_file(const char *path, std::vector<std::string> *output, bool root_file);
-bool glslang_parse_meta(const std::vector<std::string> &lines, glslang_meta *meta);
 #endif
-
-#endif
-

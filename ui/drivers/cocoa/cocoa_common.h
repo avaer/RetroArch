@@ -14,8 +14,8 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __COCOA_COMMON_H
-#define __COCOA_COMMON_H
+#ifndef __COCOA_COMMON_SHARED_H
+#define __COCOA_COMMON_SHARED_H
 
 #include <Foundation/Foundation.h>
 
@@ -24,8 +24,22 @@
 #include "../../menu/menu_driver.h"
 #endif
 
-#ifdef HAVE_CORELOCATION
-#include <CoreLocation/CoreLocation.h>
+#if defined(HAVE_COCOATOUCH)
+#define GLContextClass EAGLContext
+#define GLFrameworkID CFSTR("com.apple.opengles")
+#define RAScreen UIScreen
+
+#ifndef UIUserInterfaceIdiomTV
+#define UIUserInterfaceIdiomTV 2
+#endif
+
+#ifndef UIUserInterfaceIdiomCarPlay
+#define UIUserInterfaceIdiomCarPlay 3
+#endif
+#else
+#define GLContextClass NSOpenGLContext
+#define GLFrameworkID CFSTR("com.apple.opengl")
+#define RAScreen NSScreen
 #endif
 
 typedef enum apple_view_type {
@@ -36,57 +50,24 @@ typedef enum apple_view_type {
    APPLE_VIEW_TYPE_METAL,
 } apple_view_type_t;
 
-#ifdef HAVE_METAL
-#import <MetalKit/MetalKit.h>
-
-@interface MetalView : MTKView
-@end
-
-#endif
-
-@protocol ApplePlatform
-
-/*! @brief renderView returns the current render view based on the viewType */
-@property (readonly) id renderView;
-
-/*! @brief isActive returns true if the application has focus */
-@property (readonly) bool hasFocus;
-
-@property (readwrite) apple_view_type_t viewType;
-
-/*! @brief setVideoMode adjusts the video display to the specified mode */
-- (void)setVideoMode:(gfx_ctx_mode_t)mode;
-
-/*! @brief setCursorVisible specifies whether the cursor is visible */
-- (void)setCursorVisible:(bool)v;
-
-@end
-
-extern id<ApplePlatform> apple_platform;
-
 #if defined(HAVE_COCOATOUCH)
 #include <UIKit/UIKit.h>
 
-#ifdef HAVE_AVFOUNDATION
-#import <AVFoundation/AVCaptureOutput.h>
+#if TARGET_OS_TV
+#import <GameController/GameController.h>
 #endif
 
-
-/*********************************************/
-/* RAMenuBase                                */
-/* A menu class that displays RAMenuItemBase */
-/* objects.                                  */
-/*********************************************/
-@interface RAMenuBase : UITableViewController
-@property (nonatomic) NSMutableArray* sections;
-@property (nonatomic) BOOL hidesHeaders;
-@property (nonatomic) RAMenuBase* last_menu;
-@property (nonatomic) UILabel *osdmessage;
-
-- (id)initWithStyle:(UITableViewStyle)style;
-- (id)itemForIndexPath:(NSIndexPath*)indexPath;
-
+#if TARGET_OS_IOS
+@interface CocoaView : UIViewController
+#elif TARGET_OS_TV
+@interface CocoaView : GCEventViewController
+#endif
++ (CocoaView*)get;
 @end
+
+void get_ios_version(int *major, int *minor);
+
+#endif
 
 typedef struct
 {
@@ -96,42 +77,13 @@ typedef struct
 } apple_frontend_settings_t;
 extern apple_frontend_settings_t apple_frontend_settings;
 
-@interface CocoaView : UIViewController<CLLocationManagerDelegate,
-AVCaptureAudioDataOutputSampleBufferDelegate>
-+ (CocoaView*)get;
-@end
-
-@interface RetroArch_iOS : UINavigationController<UIApplicationDelegate,
-UINavigationControllerDelegate, ApplePlatform>
-
-@property (nonatomic) UIWindow* window;
-@property (nonatomic) NSString* documentsDirectory;
-@property (nonatomic) RAMenuBase* mainmenu;
-@property (nonatomic) int menu_count;
-
-+ (RetroArch_iOS*)get;
-
-- (void)showGameView;
-- (void)toggleUI;
-- (void)supportOtherAudioSessions;
-
-- (void)refreshSystemConfig;
-- (void)mainMenuPushPop: (bool)pushp;
-- (void)mainMenuRefresh;
-@end
-
-void get_ios_version(int *major, int *minor);
-
-#elif defined(HAVE_COCOA)
+#if TARGET_OS_OSX
 #include <AppKit/AppKit.h>
 
 @interface CocoaView : NSView
-#ifdef HAVE_CORELOCATION
-<CLLocationManagerDelegate>
-#endif
 
 + (CocoaView*)get;
-#if !defined(HAVE_COCOA)
+#if !defined(HAVE_COCOA) && !defined(HAVE_COCOA_METAL)
 - (void)display;
 #endif
 
@@ -154,5 +106,11 @@ void get_ios_version(int *major, int *minor);
 #define BRIDGE
 #define UNSAFE_UNRETAINED
 #endif
+
+void *nsview_get_ptr(void);
+
+void nsview_set_ptr(CocoaView *ptr);
+
+void *get_chosen_screen(void);
 
 #endif

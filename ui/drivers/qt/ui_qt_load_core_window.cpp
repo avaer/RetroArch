@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- *  Copyright (C) 2018 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -20,20 +20,28 @@
 #include <QFileDialog>
 #include <QDesktopWidget>
 
+#ifndef CXX_BUILD
 extern "C" {
+#endif
+
+#include <string/stdstring.h>
+#include <file/file_path.h>
+#include <retro_miscellaneous.h>
+
 #include "../../../core_info.h"
 #include "../../../verbosity.h"
 #include "../../../configuration.h"
 #include "../../../msg_hash.h"
+#include "../../../paths.h"
 #include "../../../retroarch.h"
 #include "../../../command.h"
 #include "../../../frontend/frontend_driver.h"
-#include <string/stdstring.h>
-#include <file/file_path.h>
-#include <retro_miscellaneous.h>
-};
 
-#define CORE_NAME_COLUMN 0
+#ifndef CXX_BUILD
+}
+#endif
+
+#define CORE_NAME_COLUMN    0
 #define CORE_VERSION_COLUMN 1
 
 LoadCoreTableWidget::LoadCoreTableWidget(QWidget *parent) :
@@ -58,7 +66,7 @@ LoadCoreWindow::LoadCoreWindow(QWidget *parent) :
    ,m_table(new LoadCoreTableWidget())
    ,m_statusLabel(new QLabel())
 {
-   QHBoxLayout *hbox = new QHBoxLayout();
+   QHBoxLayout             *hbox = new QHBoxLayout();
    QPushButton *customCoreButton = new QPushButton(msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_LOAD_CUSTOM_CORE));
 
    connect(customCoreButton, SIGNAL(clicked()), this, SLOT(onLoadCustomCoreClicked()));
@@ -72,7 +80,8 @@ LoadCoreWindow::LoadCoreWindow(QWidget *parent) :
    centralWidget()->setLayout(&m_layout);
 
    hbox->addWidget(customCoreButton);
-   hbox->addItem(new QSpacerItem(width(), 20, QSizePolicy::Expanding, QSizePolicy::Minimum));
+   hbox->addItem(new QSpacerItem(width(),
+            20, QSizePolicy::Expanding, QSizePolicy::Minimum));
 
    m_layout.addWidget(m_table);
    m_layout.addLayout(hbox);
@@ -121,8 +130,12 @@ void LoadCoreWindow::loadCore(const char *path)
    qApp->processEvents();
 
 #ifdef HAVE_DYNAMIC
-   /* const-removing cast is safe here because the path is never written to */
-   rarch_ctl(RARCH_CTL_SET_LIBRETRO_PATH, const_cast<char*>(path));
+   path_set(RARCH_PATH_CORE, path);
+
+   command_event(CMD_EVENT_CORE_INFO_DEINIT, NULL);
+   command_event(CMD_EVENT_CORE_INFO_INIT, NULL);
+
+   core_info_init_current_core();
 
    if (!command_event(CMD_EVENT_LOAD_CORE, NULL))
    {
@@ -138,18 +151,16 @@ void LoadCoreWindow::loadCore(const char *path)
 
 void LoadCoreWindow::onCoreEnterPressed()
 {
-   QTableWidgetItem *selectedCoreItem = NULL;
-   QString path;
    QByteArray pathArray;
-   const char *pathData = NULL;
-   QVariantHash hash;
-
-   selectedCoreItem = m_table->item(m_table->currentRow(), CORE_NAME_COLUMN);
-   hash = selectedCoreItem->data(Qt::UserRole).toHash();
-   path = hash["path"].toString();
+   const char               *pathData = NULL;
+   QTableWidgetItem *selectedCoreItem = 
+      m_table->item(m_table->currentRow(), CORE_NAME_COLUMN);
+   QVariantHash                  hash = selectedCoreItem->data(
+         Qt::UserRole).toHash();
+   QString                       path = hash["path"].toString();
 
    pathArray.append(path);
-   pathData = pathArray.constData();
+   pathData                           = pathArray.constData();
 
    loadCore(pathData);
 }
@@ -158,10 +169,11 @@ void LoadCoreWindow::onLoadCustomCoreClicked()
 {
    QString path;
    QByteArray pathArray;
-   settings_t *settings = config_get_ptr();
-   char core_ext[255] = {0};
+   char core_ext[255]            = {0};
    char filters[PATH_MAX_LENGTH] = {0};
-   const char *pathData = NULL;
+   const char *pathData          = NULL;
+   settings_t *settings          = config_get_ptr();
+   const char *path_dir_libretro = settings->paths.directory_libretro;
 
    frontend_driver_get_core_extension(core_ext, sizeof(core_ext));
 
@@ -169,25 +181,27 @@ void LoadCoreWindow::onLoadCustomCoreClicked()
    strlcat(filters, core_ext, sizeof(filters));
    strlcat(filters, ");;All Files (*.*)", sizeof(filters));
 
-   path = QFileDialog::getOpenFileName(this, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_LOAD_CORE), settings->paths.directory_libretro, filters, NULL);
+   path                          = QFileDialog::getOpenFileName(
+         this, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_LOAD_CORE),
+         path_dir_libretro, filters, NULL);
 
    if (path.isEmpty())
       return;
 
    pathArray.append(path);
-   pathData = pathArray.constData();
+   pathData                      = pathArray.constData();
 
    loadCore(pathData);
 }
 
 void LoadCoreWindow::initCoreList(const QStringList &extensionFilters)
 {
-   core_info_list_t *cores = NULL;
+   int j;
+   unsigned i;
    QStringList horizontal_header_labels;
+   core_info_list_t *cores = NULL;
    QDesktopWidget *desktop = qApp->desktop();
-   QRect desktopRect = desktop->availableGeometry();
-   unsigned i = 0;
-   int j = 0;
+   QRect desktopRect       = desktop->availableGeometry();
 
    horizontal_header_labels << msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_NAME);
    horizontal_header_labels << msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QT_CORE_VERSION);
@@ -200,32 +214,37 @@ void LoadCoreWindow::initCoreList(const QStringList &extensionFilters)
    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
    m_table->setSelectionMode(QAbstractItemView::SingleSelection);
    m_table->setSortingEnabled(false);
-   m_table->setRowCount(cores->count);
    m_table->setColumnCount(2);
    m_table->setHorizontalHeaderLabels(horizontal_header_labels);
 
-   for (i = 0; i < cores->count; i++)
+   if (cores)
    {
-      core_info_t *core = core_info_get(cores, i);
-      QTableWidgetItem *name_item = NULL;
-      QTableWidgetItem *version_item = new QTableWidgetItem(core->display_version);
-      QVariantHash hash;
-      const char *name = core->display_name;
+      m_table->setRowCount(cores->count);
 
-      if (string_is_empty(name))
-         name = path_basename(core->path);
+      for (i = 0; i < cores->count; i++)
+      {
+         QVariantHash hash;
+         core_info_t              *core = core_info_get(cores, i);
+         QTableWidgetItem    *name_item = NULL;
+         QTableWidgetItem *version_item = new QTableWidgetItem(core->display_version);
+         const char               *name = core->display_name;
 
-      name_item = new QTableWidgetItem(name);
+         if (string_is_empty(name))
+            name                        = path_basename(core->path);
 
-      hash["path"] = core->path;
-      hash["extensions"] = QString(core->supported_extensions).split("|");
+         name_item                      = new QTableWidgetItem(name);
 
-      name_item->setData(Qt::UserRole, hash);
-      name_item->setFlags(name_item->flags() & ~Qt::ItemIsEditable);
-      version_item->setFlags(version_item->flags() & ~Qt::ItemIsEditable);
+         hash["path"]                   = core->path;
+         hash["extensions"]             = QString(
+               core->supported_extensions).split("|");
 
-      m_table->setItem(i, CORE_NAME_COLUMN, name_item);
-      m_table->setItem(i, CORE_VERSION_COLUMN, version_item);
+         name_item->setData(Qt::UserRole, hash);
+         name_item->setFlags(name_item->flags() & ~Qt::ItemIsEditable);
+         version_item->setFlags(version_item->flags() & ~Qt::ItemIsEditable);
+
+         m_table->setItem(i, CORE_NAME_COLUMN, name_item);
+         m_table->setItem(i, CORE_VERSION_COLUMN, version_item);
+      }
    }
 
    if (!extensionFilters.isEmpty())
@@ -234,16 +253,16 @@ void LoadCoreWindow::initCoreList(const QStringList &extensionFilters)
 
       for (j = 0; j < m_table->rowCount(); j++)
       {
-         bool found = false;
-         QTableWidgetItem *item = m_table->item(j, CORE_NAME_COLUMN);
+         int k;
          QVariantHash hash;
          QStringList extensions;
-         int k = 0;
+         bool             found = false;
+         QTableWidgetItem *item = m_table->item(j, CORE_NAME_COLUMN);
 
          if (!item)
             continue;
 
-         hash = item->data(Qt::UserRole).toHash();
+         hash       = item->data(Qt::UserRole).toHash();
          extensions = hash["extensions"].toStringList();
 
          if (!extensions.isEmpty())
@@ -266,8 +285,11 @@ void LoadCoreWindow::initCoreList(const QStringList &extensionFilters)
 
       if (rowsToHide.size() != m_table->rowCount())
       {
-         foreach (const int &row, rowsToHide)
+         int i = 0;
+
+         for (i = 0; i < rowsToHide.count() && rowsToHide.count() > 0; i++)
          {
+            const int &row = rowsToHide.at(i);
             m_table->setRowHidden(row, true);
          }
       }

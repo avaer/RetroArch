@@ -58,13 +58,26 @@ extern u32 gpuCmdBufOffset;
 extern u32 __linear_heap_size;
 extern u32 __linear_heap;
 
+#ifdef USE_CTRULIB_2
+__attribute__((always_inline))
+static INLINE Result ctrGspSubmitGxCommand(u32 gxCommand[0x8])
+{
+   return gspSubmitGxCommand(gxCommand);
+}
+#else
+__attribute__((always_inline))
+static INLINE Result ctrGspSubmitGxCommand(u32 gxCommand[0x8])
+{
+   return gspSubmitGxCommand(gxCmdBuf, gxCommand);
+}
+#endif
+
 __attribute__((always_inline))
 static INLINE Result ctr_set_parallax_layer(bool state)
 {
    u32 reg_state = state? 0x00010001: 0x0;
    return GSPGPU_WriteHWRegs(0x202000, &reg_state, 4);
 }
-
 
 __attribute__((always_inline))
 static INLINE void ctrGuSetTexture(GPU_TEXUNIT unit, u32* data,
@@ -108,7 +121,7 @@ static INLINE Result ctrGuSetCommandList_First(bool queued, u32* buf0a, u32 buf0
    gxCommand[6]=(u32)buf2s; //buf2 size
    gxCommand[7]=0x0;
 
-   return gspSubmitGxCommand(gxCmdBuf, gxCommand);
+   return ctrGspSubmitGxCommand(gxCommand);
 }
 
 __attribute__((always_inline))
@@ -122,7 +135,7 @@ static INLINE Result ctrGuSetCommandList_Last(bool queued, u32* buf0a, u32 buf0s
    gxCommand[4]=gxCommand[5]=gxCommand[6]=0x0;
    gxCommand[7]=(flags>>1)&1; //when non-zero, call svcFlushProcessDataCache() with the specified buffer
 
-   return gspSubmitGxCommand(gxCmdBuf, gxCommand);
+   return ctrGspSubmitGxCommand(gxCommand);
 }
 
 __attribute__((always_inline))
@@ -146,7 +159,7 @@ static INLINE Result ctrGuSetMemoryFill(bool queued, u32* buf0a, u32 buf0v, u32*
    gxCommand[6]=(u32)buf1e; //buf1 end addr
    gxCommand[7]=(width0)|(width1<<16);
 
-   return gspSubmitGxCommand(gxCmdBuf, gxCommand);
+   return ctrGspSubmitGxCommand(gxCommand);
 }
 
 __attribute__((always_inline))
@@ -168,7 +181,7 @@ static INLINE Result ctrGuCopyImage
                 | ((dst_w > src_w) ? CTRGU_DMA_TRUNCATE : 0);
    gxCommand[6]=gxCommand[7]=0x0;
 
-   return gspSubmitGxCommand(gxCmdBuf, gxCommand);
+   return ctrGspSubmitGxCommand(gxCommand);
 
 }
 
@@ -187,7 +200,7 @@ static INLINE Result ctrGuDisplayTransfer
    gxCommand[5]=(src_fmt << 8) | (dst_fmt << 12) | multisample_lvl;
    gxCommand[6]=gxCommand[7]=0x0;
 
-   return gspSubmitGxCommand(gxCmdBuf, gxCommand);
+   return ctrGspSubmitGxCommand(gxCommand);
 
 }
 
@@ -197,7 +210,6 @@ static INLINE void ctrGuSetVertexShaderFloatUniform(int id, float* data, int cou
    GPUCMD_AddWrite(GPUREG_VSH_FLOATUNIFORM_CONFIG, 0x80000000|(u32)id);
    GPUCMD_AddWrites(GPUREG_VSH_FLOATUNIFORM_DATA, (u32*)data, (u32)count * 4);
 }
-
 
 #define CTRGU_ATTRIBFMT(f, n) ((((n)-1)<<2)|((f)&3))
 
@@ -242,7 +254,6 @@ static INLINE int ctrgu_swizzle_coords(int x, int y, int width)
 {
    int pos = (x & 0x1) << 0 | ((x & 0x2) << 1) | ((x & 0x4) << 2) |
              (y & 0x1) << 1 | ((y & 0x2) << 2) | ((y & 0x4) << 3);
-
 
    return ((x >> 3) << 6) + ((y >> 3) * ((width >> 3) << 6)) + pos;
 

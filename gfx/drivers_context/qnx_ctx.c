@@ -45,11 +45,9 @@
 #endif
 
 #include "../../configuration.h"
+#include "../../verbosity.h"
 
 #define WINDOW_BUFFERS 2
-
-screen_context_t screen_ctx;
-screen_window_t screen_win;
 
 typedef struct
 {
@@ -60,7 +58,10 @@ typedef struct
    bool resize;
 } qnx_ctx_data_t;
 
-static enum gfx_ctx_api qnx_api = GFX_CTX_NONE;
+/* TODO/FIXME - globals with public scope */
+screen_context_t screen_ctx;
+screen_window_t screen_win;
+
 
 static void gfx_ctx_qnx_destroy(void *data)
 {
@@ -73,10 +74,15 @@ static void gfx_ctx_qnx_destroy(void *data)
    free(data);
 }
 
-static void *gfx_ctx_qnx_init(video_frame_info_t *video_info, void *video_driver)
+static void *gfx_ctx_qnx_init(void *video_driver)
 {
    EGLint n;
    EGLint major, minor;
+   int usage, format;
+#ifndef HAVE_BB10
+   int angle, size[2];
+   screen_display_mode_t screen_mode;
+#endif
    EGLint context_attributes[] = {
 #ifdef HAVE_OPENGLES2
            EGL_CONTEXT_CLIENT_VERSION, 2,
@@ -131,20 +137,13 @@ static void *gfx_ctx_qnx_init(video_frame_info_t *video_info, void *video_driver
       }
    }
 
-
 #ifdef HAVE_EGL
    if (!egl_init_context(&qnx->egl, EGL_NONE, EGL_DEFAULT_DISPLAY, &major, &minor,
-            &n, attribs))
-   {
-      egl_report_error();
+            &n, attribs, NULL))
       goto error;
-   }
 
    if (!egl_create_context(&qnx->egl, context_attributes))
-   {
-      egl_report_error();
       goto error;
-   }
 #endif
 
    if(!screen_win)
@@ -156,7 +155,7 @@ static void *gfx_ctx_qnx_init(video_frame_info_t *video_info, void *video_driver
       }
    }
 
-   int format = SCREEN_FORMAT_RGBX8888;
+   format = SCREEN_FORMAT_RGBX8888;
    if (screen_set_window_property_iv(screen_win,
             SCREEN_PROPERTY_FORMAT, &format))
    {
@@ -164,7 +163,6 @@ static void *gfx_ctx_qnx_init(video_frame_info_t *video_info, void *video_driver
       goto error;
    }
 
-   int usage;
 #ifdef HAVE_OPENGLES2
    usage = SCREEN_USAGE_OPENGL_ES2 | SCREEN_USAGE_ROTATION;
 #elif HAVE_OPENGLES3
@@ -194,11 +192,8 @@ static void *gfx_ctx_qnx_init(video_frame_info_t *video_info, void *video_driver
    }
 
 #ifndef HAVE_BB10
-   int angle, size[2];
-
    angle = atoi(getenv("ORIENTATION"));
 
-   screen_display_mode_t screen_mode;
    if (screen_get_display_property_pv(qnx->screen_disp,
             SCREEN_PROPERTY_MODE, (void**)&screen_mode))
    {
@@ -239,7 +234,6 @@ static void *gfx_ctx_qnx_init(video_frame_info_t *video_info, void *video_driver
       goto error;
    }
 
-
    if (screen_set_window_property_iv(screen_win,
             SCREEN_PROPERTY_BUFFER_SIZE, buffer_size))
    {
@@ -267,7 +261,7 @@ static void *gfx_ctx_qnx_init(video_frame_info_t *video_info, void *video_driver
    return qnx;
 
 error:
-   RARCH_ERR("EGL error: %d.\n", eglGetError());
+   egl_report_error();
    gfx_ctx_qnx_destroy(video_driver);
 screen_error:
    screen_stop_events(screen_ctx);
@@ -285,8 +279,7 @@ static void gfx_ctx_qnx_get_video_size(void *data,
 }
 
 static void gfx_ctx_qnx_check_window(void *data, bool *quit,
-      bool *resize, unsigned *width, unsigned *height,
-      bool is_shutdown)
+      bool *resize, unsigned *width, unsigned *height)
 {
    unsigned new_width, new_height;
    qnx_ctx_data_t *qnx = (qnx_ctx_data_t*)data;
@@ -303,65 +296,35 @@ static void gfx_ctx_qnx_check_window(void *data, bool *quit,
       *height = new_height;
       *resize = true;
    }
-
-   /* Check if we are exiting. */
-   if (is_shutdown)
-      *quit = true;
 }
 
 static bool gfx_ctx_qnx_set_video_mode(void *data,
-      video_frame_info_t *video_info,
       unsigned width, unsigned height,
-      bool fullscreen)
-{
-   (void)data;
-   (void)width;
-   (void)height;
-   (void)fullscreen;
-   return true;
-}
-
+      bool fullscreen) { return true; }
 
 static void gfx_ctx_qnx_input_driver(void *data,
       const char *joypad_name,
-      const input_driver_t **input, void **input_data)
+      input_driver_t **input, void **input_data)
 {
-   void *qnxinput       = input_qnx.init(joypad_name);
+   void *qnxinput       = input_driver_init_wrap(&input_qnx, joypad_name);
 
    *input               = qnxinput ? &input_qnx : NULL;
    *input_data          = qnxinput;
 }
 
-static enum gfx_ctx_api gfx_ctx_qnx_get_api(void *data)
-{
-   return qnx_api;
-}
+static enum gfx_ctx_api gfx_ctx_qnx_get_api(void *data) { return GFX_CTX_OPENGL_ES_API; }
 
 static bool gfx_ctx_qnx_bind_api(void *data,
       enum gfx_ctx_api api, unsigned major, unsigned minor)
 {
-   (void)data;
-
-   qnx_api = api;
-
    if (api == GFX_CTX_OPENGL_ES_API)
       return true;
-
    return false;
 }
 
-static bool gfx_ctx_qnx_has_focus(void *data)
-{
-   (void)data;
-   return true;
-}
+static bool gfx_ctx_qnx_has_focus(void *data) { return true; }
 
-static bool gfx_ctx_qnx_suppress_screensaver(void *data, bool enable)
-{
-   (void)data;
-   (void)enable;
-   return false;
-}
+static bool gfx_ctx_qnx_suppress_screensaver(void *data, bool enable) { return false; }
 
 static int dpi_get_density(qnx_ctx_data_t *qnx)
 {
@@ -417,7 +380,7 @@ dpi_fallback:
    return true;
 }
 
-static void gfx_ctx_qnx_set_swap_interval(void *data, unsigned swap_interval)
+static void gfx_ctx_qnx_set_swap_interval(void *data, int swap_interval)
 {
    qnx_ctx_data_t *qnx = (qnx_ctx_data_t*)data;
 
@@ -426,7 +389,7 @@ static void gfx_ctx_qnx_set_swap_interval(void *data, unsigned swap_interval)
 #endif
 }
 
-static void gfx_ctx_qnx_swap_buffers(void *data, void *data2)
+static void gfx_ctx_qnx_swap_buffers(void *data)
 {
    qnx_ctx_data_t *qnx = (qnx_ctx_data_t*)data;
 
@@ -444,24 +407,16 @@ static void gfx_ctx_qnx_bind_hw_render(void *data, bool enable)
 #endif
 }
 
-static gfx_ctx_proc_t gfx_ctx_qnx_get_proc_address(const char *symbol)
-{
-#ifdef HAVE_EGL
-   return egl_get_proc_address(symbol);
-#endif
-}
-
 static uint32_t gfx_ctx_qnx_get_flags(void *data)
 {
    uint32_t flags = 0;
-   BIT32_SET(flags, GFX_CTX_FLAGS_NONE);
+
+   BIT32_SET(flags, GFX_CTX_FLAGS_SHADERS_GLSL);
+
    return flags;
 }
 
-static void gfx_ctx_qnx_set_flags(void *data, uint32_t flags)
-{
-   (void)flags;
-}
+static void gfx_ctx_qnx_set_flags(void *data, uint32_t flags) { }
 
 const gfx_ctx_driver_t gfx_ctx_qnx = {
    gfx_ctx_qnx_init,
@@ -482,14 +437,18 @@ const gfx_ctx_driver_t gfx_ctx_qnx = {
    NULL, /* set_resize */
    gfx_ctx_qnx_has_focus,
    gfx_ctx_qnx_suppress_screensaver,
-   NULL, /* has_windowed */
+   false, /* has_windowed */
    gfx_ctx_qnx_swap_buffers,
    gfx_ctx_qnx_input_driver,
-   gfx_ctx_qnx_get_proc_address,
+#ifdef HAVE_EGL
+   egl_get_proc_address,
+#else
+   NULL,
+#endif
    NULL,
    NULL,
    NULL,
-   "qnx",
+   "egl_qnx",
    gfx_ctx_qnx_get_flags,
    gfx_ctx_qnx_set_flags,
    gfx_ctx_qnx_bind_hw_render,

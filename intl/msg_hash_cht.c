@@ -24,13 +24,15 @@
 #include "../configuration.h"
 #include "../verbosity.h"
 
-#if defined(_MSC_VER) && !defined(_XBOX)
+#if defined(_MSC_VER) && !defined(_XBOX) && (_MSC_VER >= 1500 && _MSC_VER < 1900)
+#if (_MSC_VER >= 1700)
 /* https://support.microsoft.com/en-us/kb/980263 */
 #pragma execution_character_set("utf-8")
-#pragma warning( disable : 4566 )
+#endif
+#pragma warning(disable:4566)
 #endif
 
-int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
+int msg_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
 {
    settings_t      *settings = config_get_ptr();
 
@@ -189,7 +191,7 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
                   " \n"
                   "回溯功能必須被啟用。");
             break;
-         case RARCH_MOVIE_RECORD_TOGGLE:
+         case RARCH_BSV_RECORD_TOGGLE:
             snprintf(s, len,
                   "在錄製和非錄製模式切換。");
             break;
@@ -255,7 +257,7 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
                "to the content.");
          break;
       case MENU_ENUM_LABEL_RESTART_CONTENT:
-         snprintf(s, len, "Restarts the content from the beginning.");
+         snprintf(s, len, "重新開始遊戲.");
          break;
       case MENU_ENUM_LABEL_CLOSE_CONTENT:
          snprintf(s, len, "關閉內容並從內存中卸載。");
@@ -519,11 +521,11 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
          break;
       case MENU_ENUM_LABEL_VIDEO_FONT_SIZE:
          snprintf(s, len,
-               "屏顯訊息的字體大小.");
+               "營幕訊息的字體大小.");
          break;
       case MENU_ENUM_LABEL_SAVESTATE_AUTO_INDEX:
          snprintf(s, len,
-               "Automatically increment slot index on each save, \n"
+               "存檔時自動增加 slot index , \n"
                "generating multiple savestate files. \n"
                "When the content is loaded, state slot will be \n"
                "set to the highest existing value (last savestate).");
@@ -646,23 +648,23 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
          break;
       case MENU_ENUM_LABEL_VALUE_HELP_SCANNING_CONTENT_DESC:
          snprintf(s, len,
-               "若要掃瞄遊戲內容，請訪問菜單「%s」 \n"
+               "若要掃瞄遊戲內容，請訪問菜單「%s」\n"
                "並選擇「%s」或者「%s」。\n"
-               " \n"
-               "文件將會同數據庫中的條目進行對比。 \n"
-               "若文件匹配某個條目，則它會被加入收藏中。 \n"
-               " \n"
-               "你可以無需每次都打開文件瀏覽器，而可以直接 \n"
+               "\n"
+               "文件將會同數據庫中的條目進行對比。\n"
+               "若文件匹配某個條目，則它會被加入遊戲列表中。\n"
+               "\n"
+               "你可以無需每次都打開文件瀏覽器，而可以直接\n"
                "通過菜單項「%s」->「%s」 來訪\n"
-               "問這些遊戲內容。 \n"
-               " \n"
+               "問這些遊戲內容。\n"
+               "\n"
                "注意：不是所有核心的遊戲內容都支持掃瞄錄入。"
                ,
                msg_hash_to_str(MENU_ENUM_LABEL_VALUE_ADD_CONTENT_LIST),
                msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SCAN_DIRECTORY),
                msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SCAN_FILE),
                msg_hash_to_str(MENU_ENUM_LABEL_VALUE_LOAD_CONTENT_LIST),
-               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CONTENT_COLLECTION_LIST)
+               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLISTS_TAB)
                );
          break;
       case MENU_ENUM_LABEL_VALUE_EXTRACTING_PLEASE_WAIT:
@@ -746,83 +748,87 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
                );
          break;
       case MENU_ENUM_LABEL_VIDEO_DRIVER:
-         snprintf(s, len,
-               "當前視訊驅動.");
+         {
+            const char *video_driver = settings->arrays.video_driver;
 
-         if (string_is_equal(settings->arrays.video_driver, "gl"))
-         {
             snprintf(s, len,
-                  "OpenGL視訊驅動. \n"
-                  " \n"
-                  "This driver allows libretro GL cores to  \n"
-                  "be used in addition to software-rendered \n"
-                  "core implementations.\n"
-                  " \n"
-                  "Performance for software-rendered and \n"
-                  "libretro GL core implementations is \n"
-                  "dependent on your graphics card's \n"
-                  "underlying GL driver).");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "sdl2"))
-         {
-            snprintf(s, len,
-                  "SDL 2 視訊驅動.\n"
-                  " \n"
-                  "This is an SDL 2 software-rendered video \n"
-                  "driver.\n"
-                  " \n"
-                  "Performance for software-rendered libretro \n"
-                  "core implementations is dependent \n"
-                  "on your platform SDL implementation.");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "sdl1"))
-         {
-            snprintf(s, len,
-                  "SDL 視訊驅動.\n"
-                  " \n"
-                  "This is an SDL 1.2 software-rendered video \n"
-                  "driver.\n"
-                  " \n"
-                  "Performance is considered to be suboptimal. \n"
-                  "Consider using it only as a last resort.");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "d3d"))
-         {
-            snprintf(s, len,
-                  "Direct3D 視訊驅動. \n"
-                  " \n"
-                  "Performance for software-rendered cores \n"
-                  "is dependent on your graphic card's \n"
-                  "underlying D3D driver).");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "exynos"))
-         {
-            snprintf(s, len,
-                  "Exynos-G2D 視訊驅動. \n"
-                  " \n"
-                  "This is a low-level Exynos video driver. \n"
-                  "Uses the G2D block in Samsung Exynos SoC \n"
-                  "for blit operations. \n"
-                  " \n"
-                  "Performance for software rendered cores \n"
-                  "should be optimal.");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "drm"))
-         {
-            snprintf(s, len,
-                  "Plain DRM 視訊驅動. \n"
-                  " \n"
-                  "This is a low-level video driver using. \n"
-                  "libdrm for hardware scaling using \n"
-                  "GPU overlays.");
-         }
-         else if (string_is_equal(settings->arrays.video_driver, "sunxi"))
-         {
-            snprintf(s, len,
-                  "Sunxi-G2D 視訊驅動. \n"
-                  " \n"
-                  "This is a low-level Sunxi video driver. \n"
-                  "Uses the G2D block in Allwinner SoCs.");
+                  "當前視訊驅動.");
+
+            if (string_is_equal(video_driver, "gl"))
+            {
+               snprintf(s, len,
+                     "OpenGL視訊驅動. \n"
+                     " \n"
+                     "This driver allows libretro GL cores to  \n"
+                     "be used in addition to software-rendered \n"
+                     "core implementations.\n"
+                     " \n"
+                     "Performance for software-rendered and \n"
+                     "libretro GL core implementations is \n"
+                     "dependent on your graphics card's \n"
+                     "underlying GL driver).");
+            }
+            else if (string_is_equal(video_driver, "sdl2"))
+            {
+               snprintf(s, len,
+                     "SDL 2 視訊驅動.\n"
+                     " \n"
+                     "This is an SDL 2 software-rendered video \n"
+                     "driver.\n"
+                     " \n"
+                     "Performance for software-rendered libretro \n"
+                     "core implementations is dependent \n"
+                     "on your platform SDL implementation.");
+            }
+            else if (string_is_equal(video_driver, "sdl1"))
+            {
+               snprintf(s, len,
+                     "SDL 視訊驅動.\n"
+                     " \n"
+                     "This is an SDL 1.2 software-rendered video \n"
+                     "driver.\n"
+                     " \n"
+                     "Performance is considered to be suboptimal. \n"
+                     "Consider using it only as a last resort.");
+            }
+            else if (string_is_equal(video_driver, "d3d"))
+            {
+               snprintf(s, len,
+                     "Direct3D 視訊驅動. \n"
+                     " \n"
+                     "Performance for software-rendered cores \n"
+                     "is dependent on your graphic card's \n"
+                     "underlying D3D driver).");
+            }
+            else if (string_is_equal(video_driver, "exynos"))
+            {
+               snprintf(s, len,
+                     "Exynos-G2D 視訊驅動. \n"
+                     " \n"
+                     "This is a low-level Exynos video driver. \n"
+                     "Uses the G2D block in Samsung Exynos SoC \n"
+                     "for blit operations. \n"
+                     " \n"
+                     "Performance for software rendered cores \n"
+                     "should be optimal.");
+            }
+            else if (string_is_equal(video_driver, "drm"))
+            {
+               snprintf(s, len,
+                     "Plain DRM 視訊驅動. \n"
+                     " \n"
+                     "This is a low-level video driver using. \n"
+                     "libdrm for hardware scaling using \n"
+                     "GPU overlays.");
+            }
+            else if (string_is_equal(video_driver, "sunxi"))
+            {
+               snprintf(s, len,
+                     "Sunxi-G2D 視訊驅動. \n"
+                     " \n"
+                     "This is a low-level Sunxi video driver. \n"
+                     "Uses the G2D block in Allwinner SoCs.");
+            }
          }
          break;
       case MENU_ENUM_LABEL_AUDIO_DSP_PLUGIN:
@@ -1443,14 +1449,6 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
                "When slowmotion, content will slow\n"
                "down by factor.");
          break;
-      case MENU_ENUM_LABEL_INPUT_AXIS_THRESHOLD:
-         snprintf(s, len,
-               "Defines axis threshold.\n"
-               " \n"
-               "How far an axis must be tilted to result\n"
-               "in a button press.\n"
-               " Possible values are [0.0, 1.0].");
-         break;
       case MENU_ENUM_LABEL_INPUT_TURBO_PERIOD:
          snprintf(s, len,
                "Turbo period.\n"
@@ -1549,6 +1547,15 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
          snprintf(s, len,
                "Smoothens picture with bilinear filtering. \n"
                "Should be disabled if using shaders.");
+         break;
+      case MENU_ENUM_LABEL_VIDEO_CTX_SCALING:
+         snprintf(s, len,
+#ifdef HAVE_ODROIDGO2
+               "RGA scaling and bicubic filtering. May break widgets."
+#else
+               "Hardware context scaling (if available)."
+#endif
+         );
          break;
       case MENU_ENUM_LABEL_TIMEDATE_ENABLE:
          snprintf(s, len,
@@ -1680,7 +1687,7 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
          break;
       case MENU_ENUM_LABEL_LOCATION_ALLOW:
          snprintf(s, len,
-               "Allow or disallow location services \n"
+               "開啟或關閉定位服務 \n"
                "access by cores.");
          break;
       case MENU_ENUM_LABEL_TURBO:
@@ -1731,11 +1738,11 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
          break;
       case MENU_ENUM_LABEL_CHEAT_INDEX_PLUS:
          snprintf(s, len,
-               "Increment cheat index.\n");
+               "增加 cheat index.\n");
          break;
       case MENU_ENUM_LABEL_CHEAT_INDEX_MINUS:
          snprintf(s, len,
-               "Decrement cheat index.\n");
+               "減少 cheat index.\n");
          break;
       case MENU_ENUM_LABEL_SHADER_PREV:
          snprintf(s, len,
@@ -1770,7 +1777,7 @@ int menu_hash_get_help_cht_enum(enum msg_hash_enums msg, char *s, size_t len)
          snprintf(s, len,
                "Frame advance when content is paused.");
          break;
-      case MENU_ENUM_LABEL_MOVIE_RECORD_TOGGLE:
+      case MENU_ENUM_LABEL_BSV_RECORD_TOGGLE:
          snprintf(s, len,
                "Toggle between recording and not.");
          break;

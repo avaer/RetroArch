@@ -19,12 +19,16 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <string/stdstring.h>
+
 #ifdef HAVE_CONFIG_H
 #include "../../config.h"
 #endif
 
 #include "../../frontend/frontend_driver.h"
 #include "../../configuration.h"
+#include "../../input/input_driver.h"
+#include "../../verbosity.h"
 
 #include "../common/egl_common.h"
 #include "../common/gl_common.h"
@@ -50,14 +54,10 @@ typedef struct
    bool should_reset_mode;
 } xegl_ctx_data_t;
 
+/* TODO/FIXME - static globals */
 static enum gfx_ctx_api xegl_api = GFX_CTX_NONE;
 
-static int x_nul_handler(Display *dpy, XErrorEvent *event)
-{
-   (void)dpy;
-   (void)event;
-   return 0;
-}
+static int xegl_nul_handler(Display *dpy, XErrorEvent *event) { return 0; }
 
 static void gfx_ctx_xegl_destroy(void *data)
 {
@@ -101,7 +101,7 @@ EGL_BLUE_SIZE,       1, \
 EGL_ALPHA_SIZE,      0, \
 EGL_DEPTH_SIZE,      0
 
-static void *gfx_ctx_xegl_init(video_frame_info_t *video_info, void *video_driver)
+static void *gfx_ctx_xegl_init(void *video_driver)
 {
 #ifdef HAVE_EGL
    static const EGLint egl_attribs_gl[] = {
@@ -172,7 +172,7 @@ static void *gfx_ctx_xegl_init(video_frame_info_t *video_info, void *video_drive
 
 #ifdef HAVE_EGL
    if (!egl_init_context(&xegl->egl, EGL_PLATFORM_X11_KHR,
-            (EGLNativeDisplayType)g_x11_dpy, &major, &minor, &n, attrib_ptr))
+            (EGLNativeDisplayType)g_x11_dpy, &major, &minor, &n, attrib_ptr, egl_default_accept_config_cb))
    {
       egl_report_error();
       goto error;
@@ -255,26 +255,28 @@ static EGLint *xegl_fill_attribs(xegl_ctx_data_t *xegl, EGLint *attr)
 }
 
 /* forward declaration */
-static void gfx_ctx_xegl_set_swap_interval(void *data, unsigned swap_interval);
+static void gfx_ctx_xegl_set_swap_interval(void *data, int swap_interval);
 
 static bool gfx_ctx_xegl_set_video_mode(void *data,
-      video_frame_info_t *video_info,
       unsigned width, unsigned height,
       bool fullscreen)
 {
    XEvent event;
    EGLint egl_attribs[16];
    EGLint vid, num_visuals;
-   EGLint *attr             = NULL;
-   bool true_full           = false;
-   int x_off                = 0;
-   int y_off                = 0;
-   XVisualInfo temp         = {0};
-   XSetWindowAttributes swa = {0};
-   XVisualInfo *vi          = NULL;
-   char *wm_name            = NULL;
-   xegl_ctx_data_t *xegl    = (xegl_ctx_data_t*)data;
-   settings_t *settings     = config_get_ptr();
+   EGLint *attr                   = NULL;
+   bool true_full                 = false;
+   int x_off                      = 0;
+   int y_off                      = 0;
+   XVisualInfo temp               = {0};
+   XSetWindowAttributes swa       = {0};
+   XVisualInfo *vi                = NULL;
+   char *wm_name                  = NULL;
+   xegl_ctx_data_t *xegl          = (xegl_ctx_data_t*)data;
+   settings_t *settings           = config_get_ptr();
+   bool video_disable_composition = settings->bools.video_disable_composition;
+   bool windowed_fullscreen       = settings->bools.video_windowed_fullscreen;
+   unsigned video_monitor_index   = settings->uints.video_monitor_index;
 
    int (*old_handler)(Display*, XErrorEvent*) = NULL;
 
@@ -301,9 +303,9 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
       ButtonPressMask | ButtonReleaseMask | KeyReleaseMask;
    swa.override_redirect = False;
 
-   if (fullscreen && !video_info->windowed_fullscreen)
+   if (fullscreen && !windowed_fullscreen)
    {
-      if (x11_enter_fullscreen(video_info, g_x11_dpy, width, height))
+      if (x11_enter_fullscreen(g_x11_dpy, width, height))
       {
          xegl->should_reset_mode = true;
          true_full = true;
@@ -327,8 +329,8 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
    if (!x11_has_net_wm_fullscreen(g_x11_dpy) && true_full)
       swa.override_redirect = True;
 
-   if (video_info->monitor_index)
-      g_x11_screen = video_info->monitor_index - 1;
+   if (video_monitor_index)
+      g_x11_screen = video_monitor_index - 1;
 
 #ifdef HAVE_XINERAMA
    if (fullscreen || g_x11_screen != 0)
@@ -360,7 +362,7 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
          &swa);
    XSetWindowBackground(g_x11_dpy, g_x11_win, 0);
 
-   if (fullscreen && settings && settings->bools.video_disable_composition)
+   if (fullscreen && video_disable_composition)
    {
       uint32_t value                = 1;
       Atom cardinal                 = XInternAtom(g_x11_dpy, "CARDINAL", False);
@@ -380,7 +382,7 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
       goto error;
 
    x11_set_window_attr(g_x11_dpy, g_x11_win);
-   x11_update_title(NULL, video_info);
+   x11_update_title(NULL);
 
    if (fullscreen)
       x11_show_mouse(g_x11_dpy, g_x11_win, false);
@@ -429,7 +431,7 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
    /* This can blow up on some drivers. It's not fatal,
     * so override errors for this call.
     */
-   old_handler = XSetErrorHandler(x_nul_handler);
+   old_handler = XSetErrorHandler(xegl_nul_handler);
    XSetInputFocus(g_x11_dpy, g_x11_win, RevertToNone, CurrentTime);
    XSync(g_x11_dpy, False);
    XSetErrorHandler(old_handler);
@@ -450,12 +452,11 @@ error:
    return false;
 }
 
-
 static void gfx_ctx_xegl_input_driver(void *data,
       const char *joypad_name,
-      const input_driver_t **input, void **input_data)
+      input_driver_t **input, void **input_data)
 {
-   void *xinput = input_x.init(joypad_name);
+   void *xinput = input_driver_init_wrap(&input_x, joypad_name);
 
    *input       = xinput ? &input_x : NULL;
    *input_data  = xinput;
@@ -463,8 +464,6 @@ static void gfx_ctx_xegl_input_driver(void *data,
 
 static bool gfx_ctx_xegl_suppress_screensaver(void *data, bool enable)
 {
-   (void)data;
-
    if (video_driver_display_type_get() != RARCH_DISPLAY_X11)
       return false;
 
@@ -473,18 +472,7 @@ static bool gfx_ctx_xegl_suppress_screensaver(void *data, bool enable)
    return true;
 }
 
-static bool gfx_ctx_xegl_has_windowed(void *data)
-{
-   (void)data;
-
-   /* TODO - verify if this has windowed mode or not. */
-   return true;
-}
-
-static enum gfx_ctx_api gfx_ctx_xegl_get_api(void *data)
-{
-   return xegl_api;
-}
+static enum gfx_ctx_api gfx_ctx_xegl_get_api(void *data) { return xegl_api; }
 
 static bool gfx_ctx_xegl_bind_api(void *video_driver,
    enum gfx_ctx_api api, unsigned major, unsigned minor)
@@ -500,16 +488,16 @@ static bool gfx_ctx_xegl_bind_api(void *video_driver,
          if ((major * 1000 + minor) >= 3001)
             break;
 #endif
-         return eglBindAPI(EGL_OPENGL_API);
+         return egl_bind_api(EGL_OPENGL_API);
       case GFX_CTX_OPENGL_ES_API:
 #ifndef EGL_KHR_create_context
          if (major >= 3)
             break;
 #endif
-         return eglBindAPI(EGL_OPENGL_ES_API);
+         return egl_bind_api(EGL_OPENGL_ES_API);
       case GFX_CTX_OPENVG_API:
 #ifdef HAVE_VG
-         return eglBindAPI(EGL_OPENVG_API);
+         return egl_bind_api(EGL_OPENVG_API);
 #endif
       default:
          break;
@@ -520,63 +508,34 @@ static bool gfx_ctx_xegl_bind_api(void *video_driver,
 
 static void gfx_ctx_xegl_show_mouse(void *data, bool state)
 {
-   (void)data;
    x11_show_mouse(g_x11_dpy, g_x11_win, state);
 }
 
-static void gfx_ctx_xegl_swap_buffers(void *data, void *data2)
+static void gfx_ctx_xegl_swap_buffers(void *data)
 {
    xegl_ctx_data_t *xegl = (xegl_ctx_data_t*)data;
 
-   switch (xegl_api)
-   {
-      case GFX_CTX_OPENGL_API:
-      case GFX_CTX_OPENGL_ES_API:
 #ifdef HAVE_EGL
-         egl_swap_buffers(&xegl->egl);
+   egl_swap_buffers(&xegl->egl);
 #endif
-         break;
-      case GFX_CTX_NONE:
-      default:
-         break;
-   }
 }
 
 static void gfx_ctx_xegl_bind_hw_render(void *data, bool enable)
 {
    xegl_ctx_data_t *xegl = (xegl_ctx_data_t*)data;
 
-   switch (xegl_api)
-   {
-      case GFX_CTX_OPENGL_API:
-      case GFX_CTX_OPENGL_ES_API:
-      case GFX_CTX_OPENVG_API:
 #ifdef HAVE_EGL
-         egl_bind_hw_render(&xegl->egl, enable);
+   egl_bind_hw_render(&xegl->egl, enable);
 #endif
-         break;
-      case GFX_CTX_NONE:
-      default:
-         break;
-   }
 }
 
-static void gfx_ctx_xegl_set_swap_interval(void *data, unsigned swap_interval)
+static void gfx_ctx_xegl_set_swap_interval(void *data, int swap_interval)
 {
    xegl_ctx_data_t *xegl = (xegl_ctx_data_t*)data;
 
-   switch (xegl_api)
-   {
-      case GFX_CTX_OPENGL_API:
-      case GFX_CTX_OPENGL_ES_API:
 #ifdef HAVE_EGL
-         egl_set_swap_interval(&xegl->egl, swap_interval);
+   egl_set_swap_interval(&xegl->egl, swap_interval);
 #endif
-         break;
-      case GFX_CTX_NONE:
-      default:
-         break;
-   }
 }
 
 static gfx_ctx_proc_t gfx_ctx_xegl_get_proc_address(const char *symbol)
@@ -603,14 +562,22 @@ static gfx_ctx_proc_t gfx_ctx_xegl_get_proc_address(const char *symbol)
 static uint32_t gfx_ctx_xegl_get_flags(void *data)
 {
    uint32_t flags = 0;
-   BIT32_SET(flags, GFX_CTX_FLAGS_NONE);
+
+   if (string_is_equal(video_driver_get_ident(), "glcore"))
+   {
+#if defined(HAVE_SLANG) && defined(HAVE_SPIRV_CROSS)
+      BIT32_SET(flags, GFX_CTX_FLAGS_SHADERS_SLANG);
+#endif
+   }
+   else
+   {
+      BIT32_SET(flags, GFX_CTX_FLAGS_SHADERS_GLSL);
+   }
+
    return flags;
 }
 
-static void gfx_ctx_xegl_set_flags(void *data, uint32_t flags)
-{
-   (void)data;
-}
+static void gfx_ctx_xegl_set_flags(void *data, uint32_t flags) { }
 
 const gfx_ctx_driver_t gfx_ctx_x_egl =
 {
@@ -632,14 +599,14 @@ const gfx_ctx_driver_t gfx_ctx_x_egl =
    NULL, /* set_resize */
    x11_has_focus,
    gfx_ctx_xegl_suppress_screensaver,
-   gfx_ctx_xegl_has_windowed,
+   true, /* has_windowed */
    gfx_ctx_xegl_swap_buffers,
    gfx_ctx_xegl_input_driver,
    gfx_ctx_xegl_get_proc_address,
    NULL,
    NULL,
    gfx_ctx_xegl_show_mouse,
-   "x-egl",
+   "egl_x",
    gfx_ctx_xegl_get_flags,
    gfx_ctx_xegl_set_flags,
    gfx_ctx_xegl_bind_hw_render,

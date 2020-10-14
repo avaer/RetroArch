@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2018 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (fft.c).
@@ -202,4 +202,3 @@ void fft_process_inverse(fft_t *fft,
 
    resolve_float(out, fft->interleave_buffer, samples, 1.0f / samples, step);
 }
-

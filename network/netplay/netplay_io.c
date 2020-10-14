@@ -26,7 +26,15 @@
 
 #include "../../configuration.h"
 #include "../../retroarch.h"
+#include "../../command.h"
 #include "../../tasks/tasks_internal.h"
+
+#ifdef HAVE_DISCORD
+#include "../discord.h"
+
+/* TODO/FIXME - global public variable */
+extern bool discord_is_inited;
+#endif
 
 static void handle_play_spectate(netplay_t *netplay, uint32_t client_num,
       struct netplay_connection *connection, uint32_t cmd, uint32_t cmd_size,
@@ -54,7 +62,7 @@ static void print_state(netplay_t *netplay)
    }
    msg[sizeof(msg)-1] = '\0';
 
-   RARCH_LOG("%s\n", msg);
+   RARCH_LOG("[netplay] %s\n", msg);
 
 #undef APPEND
 #undef M
@@ -67,7 +75,8 @@ static void print_state(netplay_t *netplay)
  * Mark a particular remote connection as unpaused and, if relevant, inform
  * every one else that they may resume.
  */
-static void remote_unpaused(netplay_t *netplay, struct netplay_connection *connection)
+static void remote_unpaused(netplay_t *netplay,
+      struct netplay_connection *connection)
 {
     size_t i;
     connection->paused = false;
@@ -90,7 +99,8 @@ static void remote_unpaused(netplay_t *netplay, struct netplay_connection *conne
  *
  * Disconnects an active Netplay connection due to an error
  */
-void netplay_hangup(netplay_t *netplay, struct netplay_connection *connection)
+void netplay_hangup(netplay_t *netplay,
+      struct netplay_connection *connection)
 {
    char msg[512];
    const char *dmsg;
@@ -115,10 +125,18 @@ void netplay_hangup(netplay_t *netplay, struct netplay_connection *connection)
    else
    {
       dmsg = msg_hash_to_str(MSG_NETPLAY_CLIENT_HANGUP);
+#ifdef HAVE_DISCORD
+      if (discord_is_inited)
+      {
+         discord_userdata_t userdata;
+         userdata.status = DISCORD_PRESENCE_NETPLAY_NETPLAY_STOPPED;
+         command_event(CMD_EVENT_DISCORD_UPDATE, &userdata);
+      }
+#endif
       netplay->is_connected = false;
    }
-   RARCH_LOG("%s\n", dmsg);
-   runloop_msg_queue_push(dmsg, 1, 180, false);
+   RARCH_LOG("[netplay] %s\n", dmsg);
+   runloop_msg_queue_push(dmsg, 1, 180, false, NULL, MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
 
    socket_close(connection->fd);
    connection->active = false;
@@ -172,8 +190,8 @@ void netplay_hangup(netplay_t *netplay, struct netplay_connection *connection)
 /**
  * netplay_delayed_state_change:
  *
- * Handle any pending state changes which are ready as of the beginning of the
- * current frame.
+ * Handle any pending state changes which are ready 
+ * as of the beginning of the current frame.
  */
 void netplay_delayed_state_change(netplay_t *netplay)
 {
@@ -183,7 +201,7 @@ void netplay_delayed_state_change(netplay_t *netplay)
    {
       uint32_t client_num                   = (uint32_t)(i + 1);
       struct netplay_connection *connection = &netplay->connections[i];
-       
+
       if ((connection->active || connection->mode == NETPLAY_CONNECTION_DELAYED_DISCONNECT) &&
           connection->delay_frame &&
           connection->delay_frame <= netplay->self_frame_count)
@@ -193,7 +211,7 @@ void netplay_delayed_state_change(netplay_t *netplay)
          payload[0]           = htonl(connection->delay_frame);
          payload[1]           = htonl(client_num);
          payload[2]           = htonl(0);
-          
+
          memcpy(payload + 3, netplay->device_share_modes, sizeof(netplay->device_share_modes));
          strncpy((char *) (payload + 7), connection->nick, NETPLAY_NICK_LEN);
 
@@ -246,7 +264,7 @@ static bool send_input_frame(netplay_t *netplay, struct delta_frame *dframe,
    buffer[1] = htonl((bufused-2) * sizeof(uint32_t));
 
 #ifdef DEBUG_NETPLAY_STEPS
-   RARCH_LOG("Sending input for client %u\n", (unsigned) client_num);
+   RARCH_LOG("[netplay] Sending input for client %u\n", (unsigned) client_num);
    print_state(netplay);
 #endif
 
@@ -263,7 +281,8 @@ static bool send_input_frame(netplay_t *netplay, struct delta_frame *dframe,
       for (i = 0; i < netplay->connections_size; i++)
       {
          struct netplay_connection *connection = &netplay->connections[i];
-         if (connection == except) continue;
+         if (connection == except)
+            continue;
          if (connection->active &&
              connection->mode >= NETPLAY_CONNECTION_CONNECTED &&
              (connection->mode != NETPLAY_CONNECTION_PLAYING ||
@@ -303,7 +322,7 @@ bool netplay_send_cur_input(netplay_t *netplay,
       {
          if (from_client == to_client)
             continue;
-          
+
          if ((netplay->connected_players & (1<<from_client)))
          {
             if (dframe->have_real[from_client])
@@ -473,9 +492,8 @@ bool netplay_cmd_mode(netplay_t *netplay,
    enum rarch_netplay_connection_mode mode)
 {
    uint32_t cmd, device;
-   uint32_t payloadBuf = 0, *payload = NULL;
-   uint8_t share_mode;
-   settings_t *settings = config_get_ptr();
+   uint32_t payload_buf = 0, *payload    = NULL;
+   uint8_t share_mode                    = 0;
    struct netplay_connection *connection = NULL;
 
    if (!netplay->is_server)
@@ -488,25 +506,31 @@ bool netplay_cmd_mode(netplay_t *netplay,
          break;
 
       case NETPLAY_CONNECTION_SLAVE:
-         payloadBuf = NETPLAY_CMD_PLAY_BIT_SLAVE;
+         payload_buf = NETPLAY_CMD_PLAY_BIT_SLAVE;
          /* no break */
 
       case NETPLAY_CONNECTION_PLAYING:
-         payload = &payloadBuf;
-
-         /* Add a share mode if requested */
-         share_mode = netplay_settings_share_mode();
-         payloadBuf |= ((uint32_t) share_mode) << 16;
-
-         /* Request devices */
-         for (device = 0; device < MAX_INPUT_DEVICES; device++)
          {
-            if (settings->bools.netplay_request_devices[device])
-               payloadBuf |= 1<<device;
-         }
+            settings_t *settings = config_get_ptr();
+            payload = &payload_buf;
 
-         payloadBuf = htonl(payloadBuf);
-         cmd = NETPLAY_CMD_PLAY;
+            /* Add a share mode if requested */
+            share_mode = netplay_settings_share_mode(
+                  settings->uints.netplay_share_digital,
+                  settings->uints.netplay_share_analog
+                  );
+            payload_buf |= ((uint32_t) share_mode) << 16;
+
+            /* Request devices */
+            for (device = 0; device < MAX_INPUT_DEVICES; device++)
+            {
+               if (settings->bools.netplay_request_devices[device])
+                  payload_buf |= 1<<device;
+            }
+
+            payload_buf = htonl(payload_buf);
+            cmd         = NETPLAY_CMD_PLAY;
+         }
          break;
 
       default:
@@ -517,13 +541,10 @@ bool netplay_cmd_mode(netplay_t *netplay,
    {
       handle_play_spectate(netplay, 0, NULL, cmd, payload ? sizeof(uint32_t) : 0, payload);
       return true;
+   }
 
-   }
-   else
-   {
-      return netplay_send_raw_cmd(netplay, connection, cmd, payload,
-            payload ? sizeof(uint32_t) : 0);
-   }
+   return netplay_send_raw_cmd(netplay, connection, cmd, payload,
+         payload ? sizeof(uint32_t) : 0);
 }
 
 /**
@@ -572,11 +593,10 @@ static void announce_play_spectate(netplay_t *netplay,
 
          for (device = 0; device < MAX_INPUT_DEVICES; device++)
          {
-            if (!(devices & (1<<device))) continue;
+            if (!(devices & (1<<device)))
+               continue;
             if (one_device == (uint32_t) -1)
-            {
                one_device = device;
-            }
             else
             {
                one_device = (uint32_t) -1;
@@ -603,7 +623,8 @@ static void announce_play_spectate(netplay_t *netplay,
             device_str_len = 0;
             for (device = 0; device < MAX_INPUT_DEVICES; device++)
             {
-               if (!(devices & (1<<device))) continue;
+               if (!(devices & (1<<device)))
+                  continue;
                if (device_str_len)
                   device_str_len += snprintf(device_str + device_str_len,
                         sizeof(device_str) - 1 - device_str_len, ", ");
@@ -635,8 +656,8 @@ static void announce_play_spectate(netplay_t *netplay,
 
    if (msg[0])
    {
-      RARCH_LOG("%s\n", msg);
-      runloop_msg_queue_push(msg, 1, 180, false);
+      RARCH_LOG("[netplay] %s\n", msg);
+      runloop_msg_queue_push(msg, 1, 180, false, NULL, MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
    }
 }
 
@@ -671,9 +692,7 @@ static void handle_play_spectate(netplay_t *netplay, uint32_t client_num,
 
          /* Mark them as not playing anymore */
          if (connection)
-         {
             connection->mode = NETPLAY_CONNECTION_SPECTATING;
-         }
          else
          {
             netplay->self_devices = 0;
@@ -769,9 +788,12 @@ static void handle_play_spectate(netplay_t *netplay, uint32_t client_num,
             /* Make sure the devices are available and/or shareable */
             for (device = 0; device < MAX_INPUT_DEVICES; device++)
             {
-               if (!(devices & (1<<device))) continue;
-               if (!netplay->device_clients[device]) continue;
-               if (netplay->device_share_modes[device] && share_mode) continue;
+               if (!(devices & (1<<device)))
+                  continue;
+               if (!netplay->device_clients[device])
+                  continue;
+               if (netplay->device_share_modes[device] && share_mode)
+                  continue;
 
                /* Device already taken and unshareable */
                payload[0] = htonl(NETPLAY_CMD_MODE_REFUSED_REASON_NOT_AVAILABLE);
@@ -787,7 +809,8 @@ static void handle_play_spectate(netplay_t *netplay, uint32_t client_num,
             /* Set the share mode on any new devices */
             for (device = 0; device < MAX_INPUT_DEVICES; device++)
             {
-               if (!(devices & (1<<device))) continue;
+               if (!(devices & (1<<device)))
+                  continue;
                if (!netplay->device_clients[device])
                   netplay->device_share_modes[device] = share_mode;
             }
@@ -806,16 +829,16 @@ static void handle_play_spectate(netplay_t *netplay, uint32_t client_num,
                if (!netplay->device_clients[device])
                   break;
             }
-            if (device >= MAX_INPUT_DEVICES && share_mode)
+            if (device >= MAX_INPUT_DEVICES &&
+                netplay->config_devices[1] == RETRO_DEVICE_NONE && share_mode)
             {
-               /* No device was totally free, maybe one is shareable? */
-               for (device = 0; device < MAX_INPUT_DEVICES; device++)
+               /* No device free and no device specifically asked for, but only
+                * one device, so share it */
+               if (netplay->device_share_modes[0])
                {
-                  if (netplay->device_clients[device] && netplay->device_share_modes[device])
-                  {
-                     share_mode = netplay->device_share_modes[device];
-                     break;
-                  }
+                  device     = 0;
+                  share_mode = netplay->device_share_modes[0];
+                  break;
                }
             }
             if (device >= MAX_INPUT_DEVICES)
@@ -836,10 +859,8 @@ static void handle_play_spectate(netplay_t *netplay, uint32_t client_num,
 
          /* Mark them as playing */
          if (connection)
-         {
             connection->mode =
                   slave ? NETPLAY_CONNECTION_SLAVE : NETPLAY_CONNECTION_PLAYING;
-         }
          else
          {
             netplay->self_devices = devices;
@@ -851,7 +872,8 @@ static void handle_play_spectate(netplay_t *netplay, uint32_t client_num,
          netplay->client_devices[client_num] = devices;
          for (device = 0; device < MAX_INPUT_DEVICES; device++)
          {
-            if (!(devices & (1<<device))) continue;
+            if (!(devices & (1<<device)))
+               continue;
             netplay->device_clients[device] |= 1 << client_num;
          }
 
@@ -915,7 +937,7 @@ static bool netplay_get_cmd(netplay_t *netplay,
    cmd_size = ntohl(cmd_size);
 
 #ifdef DEBUG_NETPLAY_STEPS
-   RARCH_LOG("Received netplay command %X (%u) from %u\n", cmd, cmd_size,
+   RARCH_LOG("[netplay] Received netplay command %X (%u) from %u\n", cmd, cmd_size,
          (unsigned) (connection - netplay->connections));
 #endif
 
@@ -1063,7 +1085,7 @@ static bool netplay_get_cmd(netplay_t *netplay,
             }
 
 #ifdef DEBUG_NETPLAY_STEPS
-            RARCH_LOG("Received input from %u\n", client_num);
+            RARCH_LOG("[netplay] Received input from %u\n", client_num);
             print_state(netplay);
 #endif
             break;
@@ -1087,11 +1109,9 @@ static bool netplay_get_cmd(netplay_t *netplay,
 
             frame = ntohl(frame);
 
+            /* We already had this, so ignore the new transmission */
             if (frame < netplay->server_frame_count)
-            {
-               /* We already had this, so ignore the new transmission */
                break;
-            }
 
             if (frame != netplay->server_frame_count)
             {
@@ -1102,7 +1122,7 @@ static bool netplay_get_cmd(netplay_t *netplay,
             netplay->server_ptr = NEXT_PTR(netplay->server_ptr);
             netplay->server_frame_count++;
 #ifdef DEBUG_NETPLAY_STEPS
-            RARCH_LOG("Received server noinput\n");
+            RARCH_LOG("[netplay] Received server noinput\n");
             print_state(netplay);
 #endif
             break;
@@ -1175,12 +1195,11 @@ static bool netplay_get_cmd(netplay_t *netplay,
             break;
          }
 
-         if (connection->mode == NETPLAY_CONNECTION_PLAYING
+         /* They were obviously confused */
+         if (
+                  connection->mode == NETPLAY_CONNECTION_PLAYING
                || connection->mode == NETPLAY_CONNECTION_SLAVE)
-         {
-            /* They were obviously confused */
             return netplay_cmd_nak(netplay, connection);
-         }
 
          client_num = (unsigned)(connection - netplay->connections + 1);
 
@@ -1198,14 +1217,14 @@ static bool netplay_get_cmd(netplay_t *netplay,
 
 #define START(which) \
          do { \
-            ptr = which; \
+            ptr    = which; \
             dframe = &netplay->buffer[ptr]; \
-         } while(0)
+         } while (0)
 #define NEXT() \
          do { \
-            ptr = NEXT_PTR(ptr); \
+            ptr    = NEXT_PTR(ptr); \
             dframe = &netplay->buffer[ptr]; \
-         } while(0)
+         } while (0)
 
          if (netplay->is_server)
          {
@@ -1288,12 +1307,14 @@ static bool netplay_get_cmd(netplay_t *netplay,
                      {
                         uint32_t dsize;
                         netplay_input_state_t istate;
-                        if (!(devices & (1<<device))) continue;
+                        if (!(devices & (1<<device)))
+                           continue;
                         dsize = netplay_expected_input_size(netplay, 1 << device);
                         istate = netplay_input_state_for(
                               &dframe->real_input[device], client_num, dsize,
                               false, false);
-                        if (!istate) continue;
+                        if (!istate)
+                           continue;
                         memset(istate->data, 0, dsize*sizeof(uint32_t));
                      }
                      dframe->have_local = true;
@@ -1311,7 +1332,8 @@ static bool netplay_get_cmd(netplay_t *netplay,
                   /* It wants future frames, make sure we don't capture or send intermediate ones */
                   START(netplay->self_ptr);
                   frame_count = netplay->self_frame_count;
-                  while (true)
+
+                  for (;;)
                   {
                      if (!dframe->used)
                      {
@@ -1339,7 +1361,7 @@ static bool netplay_get_cmd(netplay_t *netplay,
                announce_play_spectate(netplay, NULL, NETPLAY_CONNECTION_PLAYING, devices);
 
 #ifdef DEBUG_NETPLAY_STEPS
-               RARCH_LOG("Received mode change self->%X\n", devices);
+               RARCH_LOG("[netplay] Received mode change self->%X\n", devices);
                print_state(netplay);
 #endif
 
@@ -1363,7 +1385,7 @@ static bool netplay_get_cmd(netplay_t *netplay,
                announce_play_spectate(netplay, NULL, NETPLAY_CONNECTION_SPECTATING, 0);
 
 #ifdef DEBUG_NETPLAY_STEPS
-               RARCH_LOG("Received mode change self->spectating\n");
+               RARCH_LOG("[netplay] Received mode change self->spectating\n");
                print_state(netplay);
 #endif
 
@@ -1394,7 +1416,7 @@ static bool netplay_get_cmd(netplay_t *netplay,
                announce_play_spectate(netplay, nick, NETPLAY_CONNECTION_PLAYING, devices);
 
 #ifdef DEBUG_NETPLAY_STEPS
-               RARCH_LOG("Received mode change %u->%u\n", client_num, devices);
+               RARCH_LOG("[netplay] Received mode change %u->%u\n", client_num, devices);
                print_state(netplay);
 #endif
 
@@ -1410,7 +1432,7 @@ static bool netplay_get_cmd(netplay_t *netplay,
                announce_play_spectate(netplay, nick, NETPLAY_CONNECTION_SPECTATING, 0);
 
 #ifdef DEBUG_NETPLAY_STEPS
-               RARCH_LOG("Received mode change %u->spectator\n", client_num);
+               RARCH_LOG("[netplay] Received mode change %u->spectator\n", client_num);
                print_state(netplay);
 #endif
 
@@ -1468,8 +1490,8 @@ static bool netplay_get_cmd(netplay_t *netplay,
 
             if (dmsg)
             {
-               RARCH_LOG("%s\n", dmsg);
-               runloop_msg_queue_push(dmsg, 1, 180, false);
+               RARCH_LOG("[netplay] %s\n", dmsg);
+               runloop_msg_queue_push(dmsg, 1, 180, false, NULL, MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
             }
             break;
          }
@@ -1514,11 +1536,9 @@ static bool netplay_get_cmd(netplay_t *netplay,
                tmp_ptr = PREV_PTR(tmp_ptr);
             } while (tmp_ptr != netplay->run_ptr);
 
+            /* Oh well, we got rid of it! */
             if (!found)
-            {
-               /* Oh well, we got rid of it! */
                break;
-            }
 
             if (buffer[0] <= netplay->other_frame_count)
             {
@@ -1527,11 +1547,9 @@ static bool netplay_get_cmd(netplay_t *netplay,
                uint32_t local_crc = netplay_delta_frame_crc(
                      netplay, &netplay->buffer[tmp_ptr]);
 
+               /* Problem! */
                if (buffer[1] != local_crc)
-               {
-                  /* Problem! */
                   netplay_cmd_request_savestate(netplay);
-               }
             }
             else
             {
@@ -1566,16 +1584,14 @@ static bool netplay_get_cmd(netplay_t *netplay,
             {
                if (!netplay->is_replay)
                {
-                  netplay->is_replay = true;
-                  netplay->replay_ptr = netplay->run_ptr;
+                  netplay->is_replay          = true;
+                  netplay->replay_ptr         = netplay->run_ptr;
                   netplay->replay_frame_count = netplay->run_frame_count;
                   netplay_wait_and_init_serialization(netplay);
-                  netplay->is_replay = false;
+                  netplay->is_replay         = false;
                }
                else
-               {
                   netplay_wait_and_init_serialization(netplay);
-               }
             }
 
             /* Only players may load states */
@@ -1714,7 +1730,9 @@ static bool netplay_get_cmd(netplay_t *netplay,
             /* Don't expect earlier data from other clients */
             for (client = 0; client < MAX_CLIENTS; client++)
             {
-               if (!(netplay->connected_players & (1<<client))) continue;
+               if (!(netplay->connected_players & (1<<client)))
+                  continue;
+
                if (frame > netplay->read_frame_count[client])
                {
                   netplay->read_ptr[client] = load_ptr;
@@ -1728,7 +1746,7 @@ static bool netplay_get_cmd(netplay_t *netplay,
             netplay->other_frame_count             = load_frame_count;
 
 #ifdef DEBUG_NETPLAY_STEPS
-            RARCH_LOG("Loading state at %u\n", load_frame_count);
+            RARCH_LOG("[netplay] Loading state at %u\n", load_frame_count);
             print_state(netplay);
 #endif
 
@@ -1774,8 +1792,8 @@ static bool netplay_get_cmd(netplay_t *netplay,
             {
                snprintf(msg, sizeof(msg)-1, msg_hash_to_str(MSG_NETPLAY_PEER_PAUSED), nick);
             }
-            RARCH_LOG("%s\n", msg);
-            runloop_msg_queue_push(msg, 1, 180, false);
+            RARCH_LOG("[netplay] %s\n", msg);
+            runloop_msg_queue_push(msg, 1, 180, false, NULL, MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
             break;
          }
 
@@ -1901,7 +1919,7 @@ int netplay_poll_net_input(netplay_t *netplay, bool block)
             if (socket_select(max_fd, &fds, NULL, NULL, &tv) < 0)
                return -1;
 
-            RARCH_LOG("Network is stalling at frame %u, count %u of %d ...\n",
+            RARCH_LOG("[netplay] Network is stalling at frame %u, count %u of %d ...\n",
                   netplay->run_frame_count, netplay->timeout_cnt, MAX_RETRIES);
 
             if (netplay->timeout_cnt >= MAX_RETRIES && !netplay->remote_paused)
@@ -1990,7 +2008,7 @@ void netplay_handle_slaves(netplay_t *netplay)
 void netplay_announce_nat_traversal(netplay_t *netplay)
 {
 #ifndef HAVE_SOCKET_LEGACY
-   char msg[512], host[PATH_MAX_LENGTH], port[6];
+   char msg[4200], host[PATH_MAX_LENGTH], port[6];
 
    if (netplay->nat_traversal_state.have_inet4)
    {
@@ -2011,13 +2029,19 @@ void netplay_announce_nat_traversal(netplay_t *netplay)
    }
 #endif
    else
+   {
+      snprintf(msg, sizeof(msg), "%s\n",
+            msg_hash_to_str(MSG_UPNP_FAILED));
+      runloop_msg_queue_push(msg, 1, 180, false, NULL, MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
+      RARCH_LOG("[netplay] %s\n", msg);
       return;
+   }
 
    snprintf(msg, sizeof(msg), "%s: %s:%s\n",
          msg_hash_to_str(MSG_PUBLIC_ADDRESS),
          host, port);
-   runloop_msg_queue_push(msg, 1, 180, false);
-   RARCH_LOG("%s\n", msg);
+   runloop_msg_queue_push(msg, 1, 180, false, NULL, MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
+   RARCH_LOG("[netplay] %s\n", msg);
 #endif
 }
 

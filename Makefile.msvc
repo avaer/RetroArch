@@ -7,11 +7,15 @@ ARCH            = amd64
 BUILD_DIR       = objs/msvc
 CXX_BUILD       = 0
 
-
 WindowsSdkDir = C:\Program Files (x86)\Windows Kits\10\$(NOTHING)
 WindowsSDKVersion := 10.0.14393.0\$(NOTHING)
 VCINSTALLDIR := C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\$(NOTHING)
 
+HAVE_DSP_FILTER          := 1
+HAVE_VIDEO_FILTER        := 1
+HAVE_SCREENSHOTS         := 1
+HAVE_REWIND              := 1
+HAVE_AUDIOMIXER          := 1
 HAVE_D3DX                := 1
 HAVE_D3D8                := 0
 HAVE_D3D9                := 1
@@ -20,6 +24,8 @@ HAVE_D3D11               := 1
 HAVE_D3D12               := 1
 HAVE_CG                  := 1
 HAVE_OPENGL              := 1
+HAVE_OPENGL1             := 1
+HAVE_GFX_WIDGETS			 := 1
 HAVE_VULKAN              := 1
 HAVE_XAUDIO              := 1
 HAVE_XINPUT              := 1
@@ -29,7 +35,9 @@ HAVE_WINMM               := 1
 
 HAVE_RPNG                := 1
 HAVE_ZLIB                := 1
-WANT_ZLIB                := 1
+HAVE_CONFIGFILE          := 1
+HAVE_PATCH               := 1
+HAVE_MENU                := 1
 HAVE_RGUI                := 1
 HAVE_XMB                 := 1
 HAVE_MATERIALUI          := 1
@@ -52,14 +60,31 @@ HAVE_7ZIP                := 1
 HAVE_NETWORKING          := 1
 HAVE_NETWORK_CMD         := 1
 HAVE_OVERLAY             := 1
+HAVE_VIDEO_LAYOUT        := 0
 HAVE_LANGEXTRA           := 1
 HAVE_CHEEVOS             := 1
 HAVE_SHADERPIPELINE      := 1
 HAVE_IMAGEVIEWER         := 1
+HAVE_BSV_MOVIE           := 1
+HAVE_CHEATS              := 1
+
+ifeq ($(HAVE_D3D8), 1)
+   D3D8_LIBS := -ld3d8
+   ifeq ($(HAVE_D3DX), 1)
+      D3DX8_LIBS := -ld3dx8
+   endif
+endif
+
+ifeq ($(HAVE_D3D9), 1)
+   D3D9_LIBS := -ld3d9
+   ifeq ($(HAVE_D3DX), 1)
+      D3DX9_LIBS := -ld3dx9
+   endif
+endif
 
 include Makefile.common
 INCLUDE_DIRS := $(patsubst  -isystem%,-I%,$(INCLUDE_DIRS))
-CFLAGS       := $(filter-out  -Wno-unknown-pragmas,$(CFLAGS))
+CFLAGS       := $(filter-out  -Wno-unknown-pragmas,$(DEF_FLAGS))
 CXXFLAGS     := $(filter-out  -fpermissive -Wno-switch -Wno-sign-compare -fno-strict-aliasing -Wno-maybe-uninitialized -Wno-reorder -Wno-parentheses,$(CXXFLAGS))
 LIBS         := $(filter-out  -lstdc++,$(LIBS))
 
@@ -90,13 +115,11 @@ ifeq ($(ARCH),x86)
 CROSS =
 endif
 
-
 INCLUDE := $(VCINSTALLDIR)include;$(VCINSTALLDIR)atlmfc\include;$(WindowsSdkDir)include\$(WindowsSDKVersion)ucrt;$(WindowsSdkDir)include\$(WindowsSDKVersion)shared;$(WindowsSdkDir)include\$(WindowsSDKVersion)um;
 LIB     := $(VCINSTALLDIR)LIB\$(CROSS);$(VCINSTALLDIR)atlmfc\lib\$(CROSS);$(WindowsSdkDir)lib\$(WindowsSDKVersion)ucrt\$(TARGET_ARCH2);$(WindowsSdkDir)lib\$(WindowsSDKVersion)um\$(TARGET_ARCH2);C:\Program Files (x86)\NVIDIA Corporation\Cg\lib.$(TARGET_ARCH2);C:\Program Files (x86)\Microsoft DirectX SDK (February 2010)\Lib\$(TARGET_ARCH2);
 LIBPATH := $(VCINSTALLDIR)LIB\$(CROSS);$(VCINSTALLDIR)atlmfc\lib\$(CROSS);
 
 PATH := $(shell IFS=$$'\n'; cygpath "$(VCINSTALLDIR)bin\\$(CROSS)"):$(shell IFS=$$'\n'; cygpath "$(WindowsSdkDir)\bin\\$(ARCH2)"):$(PATH)
-
 
 export INCLUDE := $(INCLUDE)
 export LIB     := $(LIB)
@@ -122,7 +145,7 @@ endif
 FLAGS  += -nologo -MP
 FLAGS  += -Gm- -Zc:inline -fp:precise -Zc:forScope -GR- -Gd -Oi -volatile:iso
 #FLAGS  += -Zc:wchar_t -Zp16 -Z7
-#FLAGS += -utf-8
+FLAGS += -utf-8
 #FLAGS += -source-charset:utf-8
 
 CXXFLAGS += $(CFLAGS) -TP -EHsc
@@ -144,7 +167,6 @@ RC = rc.exe
 LIBS += shell32.lib user32.lib gdi32.lib comdlg32.lib winmm.lib ole32.lib
 LDFLAGS  += -nologo -wx -nxcompat -machine:$(TARGET_ARCH2)
 
-
 ifeq ($(DEBUG),1)
    FLAGS += -GS -Gy -Od -RTC1 -D_SECURE_SCL=1 -Zi
    FLAGS += -MDd
@@ -154,7 +176,6 @@ else
    FLAGS += -GS- -Gy- -O2 -Ob2 -GF -GT -Oy -Ot -D_SECURE_SCL=0
    FLAGS += -MD
 endif
-
 
 ifeq ($(DEBUG),1)
    BUILD_DIR := $(BUILD_DIR)-debug
@@ -170,7 +191,6 @@ ifneq ($(V), 1)
    Q := @
 endif
 
-
 ifeq ($(GRIFFIN_BUILD), 1)
    OBJ       := griffin/griffin.o griffin/griffin_cpp.o
    DEFINES   += -DHAVE_GRIFFIN -DUSE_MATH_DEFINES
@@ -179,17 +199,12 @@ else
    OBJ := $(filter-out $(BLACKLIST),$(OBJ))
 endif
 
-DEFINES += -DRARCH_INTERNAL -DHAVE_DYNAMIC -DJSON_STATIC
+DEFINES += -DRARCH_INTERNAL -DHAVE_SCREENSHOTS -DHAVE_REWIND -DHAVE_DYNAMIC -DJSON_STATIC
 INCLUDE_DIRS += -I. -Igfx/include
-
-#OBJ := version_git.o
 
 OBJ := $(patsubst %rarch.o,%rarch.res,$(OBJ))
 OBJ := $(addprefix $(BUILD_DIR)/,$(OBJ))
 OBJ := $(OBJ:.o=.obj)
-
-
-
 
 LDFLAGS += -WX -SUBSYSTEM:WINDOWS -ENTRY:mainCRTStartup
 
@@ -197,7 +212,6 @@ DEFINES := $(patsubst -f%,,$(DEFINES))
 LDFLAGS := $(patsubst -l%,%.lib,$(LDFLAGS))
 LIBS := $(filter-out -lm,$(LIBS))
 LIBS := $(patsubst -l%,%.lib,$(LIBS))
-
 
 #$(info INCLUDE_DIRS : $(INCLUDE_DIRS))
 #$(info DEFINES : $(DEFINES))

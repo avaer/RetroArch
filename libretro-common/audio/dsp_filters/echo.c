@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2017 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (echo.c).
@@ -157,7 +157,6 @@ error:
    return NULL;
 }
 
-
 static const struct dspfilter_implementation echo_plug = {
    echo_init,
    echo_process,
@@ -179,4 +178,3 @@ const struct dspfilter_implementation *dspfilter_get_implementation(dspfilter_si
 }
 
 #undef dspfilter_get_implementation
-

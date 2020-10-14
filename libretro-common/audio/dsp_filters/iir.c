@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2017 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (iir.c).
@@ -223,7 +223,8 @@ static void iir_filter_init(struct iir_data *iir,
       case RIAA_phono: /* http://www.dsprelated.com/showmessage/73300/3.php */
       {
          double y, b_re, a_re, b_im, a_im, g;
-         float b[3], a[3];
+         float b[3] = {0.0f};
+         float a[3] = {0.0f};
 
          if ((int)sample_rate == 44100)
          {
@@ -260,7 +261,6 @@ static void iir_filter_init(struct iir_data *iir,
          a0    = a[0];
          a1    = a[1];
          a2    = a[2];
-
 
          /* Normalise to 0dB at 1kHz (Thanks to Glenn Davis) */
          y     = 2.0 * M_PI * 1000.0 / sample_rate;
@@ -369,4 +369,3 @@ const struct dspfilter_implementation *dspfilter_get_implementation(dspfilter_si
 }
 
 #undef dspfilter_get_implementation
-

@@ -19,7 +19,7 @@
  *  This file is part of mbed TLS (https://tls.mbed.org)
  */
 
-/* Modifications Copyright (C) 2017 - Brad Parker
+/* Modifications Copyright (C) 2016-2019 - Brad Parker
  * - added socket functions for PS3/Vita/WiiU
  */
 
@@ -32,19 +32,14 @@
 #if defined(MBEDTLS_NET_C)
 
 #if !defined(unix) && !defined(__unix__) && !defined(__unix) && \
-    !defined(__APPLE__) && !defined(_WIN32)
+    !defined(__APPLE__) && !defined(_WIN32) && !defined(__HAIKU__)
 #error "This module only works on Unix and Windows, see MBEDTLS_NET_C in config.h"
 #endif
 
-#if defined(MBEDTLS_PLATFORM_C)
-#include "mbedtls/platform.h"
-#else
 #include <stdlib.h>
-#endif
+#include <string.h>
 
 #include "mbedtls/net_sockets.h"
-
-#include <string.h>
 
 #if (defined(_WIN32) || defined(_WIN32_WCE)) && !defined(EFIX64) && \
     !defined(EFI32)
@@ -319,9 +314,11 @@ int mbedtls_net_accept( mbedtls_net_context *bind_ctx,
     int type_len = (int) sizeof( type );
 #endif
 
+    client_addr.ss_family = 0;
+
     /* Is this a TCP or UDP socket? */
     if( getsockopt( bind_ctx->fd, SOL_SOCKET, SO_TYPE,
-                    (void *) &type, &type_len ) != 0 ||
+                    (char *) &type, &type_len ) != 0 ||
         ( type != SOCK_STREAM && type != SOCK_DGRAM ) )
     {
         return( MBEDTLS_ERR_NET_ACCEPT_FAILED );
@@ -363,16 +360,18 @@ int mbedtls_net_accept( mbedtls_net_context *bind_ctx,
      * then bind a new socket to accept new connections */
     if( type != SOCK_STREAM )
     {
-        struct sockaddr_storage local_addr;
         int one = 1;
+        struct sockaddr_storage local_addr;
+
+        local_addr.ss_family               = 0;
 
         if( connect( bind_ctx->fd, (struct sockaddr *) &client_addr, n ) != 0 )
             return( MBEDTLS_ERR_NET_ACCEPT_FAILED );
 
-        client_ctx->fd = bind_ctx->fd;
-        bind_ctx->fd   = -1; /* In case we exit early */
+        client_ctx->fd                     = bind_ctx->fd;
+        bind_ctx->fd                       = -1; /* In case we exit early */
 
-        n = sizeof( struct sockaddr_storage );
+        n                                  = sizeof( struct sockaddr_storage );
         if( getsockname( client_ctx->fd,
                          (struct sockaddr *) &local_addr, &n ) != 0 ||
             ( bind_ctx->fd = (int) socket( local_addr.ss_family,
@@ -484,7 +483,7 @@ int mbedtls_net_recv( void *ctx, unsigned char *buf, size_t len )
 
     if( ret < 0 )
     {
-        if( net_would_block( ctx ) != 0 )
+        if( net_would_block((const mbedtls_net_context*)ctx ) != 0 )
             return( MBEDTLS_ERR_SSL_WANT_READ );
 
 #if ( defined(_WIN32) || defined(_WIN32_WCE) ) && !defined(EFIX64) && \
@@ -578,7 +577,7 @@ int mbedtls_net_send( void *ctx, const unsigned char *buf, size_t len )
 
     if( ret < 0 )
     {
-        if( net_would_block( ctx ) != 0 )
+        if( net_would_block((const mbedtls_net_context*)ctx) != 0 )
             return( MBEDTLS_ERR_SSL_WANT_WRITE );
 
 #if ( defined(_WIN32) || defined(_WIN32_WCE) ) && !defined(EFIX64) && \

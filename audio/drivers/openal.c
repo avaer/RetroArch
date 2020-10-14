@@ -33,7 +33,7 @@
 #include <retro_miscellaneous.h>
 #include <retro_timers.h>
 
-#include "../audio_driver.h"
+#include "../../retroarch.h"
 #include "../../verbosity.h"
 
 #define BUFSIZE 1024
@@ -43,17 +43,14 @@ typedef struct al
    ALuint source;
    ALuint *buffers;
    ALuint *res_buf;
-   size_t res_ptr;
-   ALenum format;
-   size_t num_buffers;
-   int rate;
-
-   uint8_t tmpbuf[BUFSIZE];
-   size_t tmpbuf_ptr;
-
    ALCdevice *handle;
    ALCcontext *ctx;
-
+   size_t res_ptr;
+   size_t num_buffers;
+   size_t tmpbuf_ptr;
+   int rate;
+   ALenum format;
+   uint8_t tmpbuf[BUFSIZE];
    bool nonblock;
    bool is_paused;
 } al_t;
@@ -115,7 +112,7 @@ static void *al_init(const char *device, unsigned rate, unsigned latency,
 
    al->buffers = (ALuint*)calloc(al->num_buffers, sizeof(ALuint));
    al->res_buf = (ALuint*)calloc(al->num_buffers, sizeof(ALuint));
-   if (al->buffers == NULL || al->res_buf == NULL)
+   if (!al->buffers || !al->res_buf)
       goto error;
 
    alGenSources(1, &al->source);

@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2018 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (trans_stream.h).
@@ -38,7 +38,6 @@
 #include <retro_common_api.h>
 
 RETRO_BEGIN_DECLS
-
 
 enum trans_stream_error
 {
@@ -105,4 +104,3 @@ extern const struct trans_stream_backend pipe_backend;
 RETRO_END_DECLS
 
 #endif
-

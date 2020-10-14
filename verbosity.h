@@ -17,6 +17,7 @@
 #define __RARCH_VERBOSITY_H
 
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include <boolean.h>
 #include <retro_common_api.h>
@@ -27,19 +28,25 @@
 
 RETRO_BEGIN_DECLS
 
+#define FILE_PATH_LOG_INFO  "[INFO]"
+#define FILE_PATH_LOG_ERROR "[ERROR]"
+#define FILE_PATH_LOG_WARN  "[WARN]"
+
 bool verbosity_is_enabled(void);
 
 void verbosity_enable(void);
 
 void verbosity_disable(void);
 
-bool *verbosity_get_ptr(void);
+void verbosity_set_log_level(unsigned level);
 
-void *retro_main_log_file(void);
+bool *verbosity_get_ptr(void);
 
 void retro_main_log_file_deinit(void);
 
-void retro_main_log_file_init(const char *path);
+void retro_main_log_file_init(const char *path, bool append);
+
+bool is_logging_to_file(void);
 
 #if defined(HAVE_LOGGER)
 
@@ -52,7 +59,7 @@ void logger_send_v(const char *__format, va_list args);
 
 #define RARCH_LOG(...) do { \
    logger_send("RetroArch Salamander: " __VA_ARGS__); \
-} while(0)
+} while (0)
 
 #define RARCH_LOG_V(tag, fmt, vp) do { \
    logger_send("RetroArch Salamander: " tag); \
@@ -61,7 +68,7 @@ void logger_send_v(const char *__format, va_list args);
 
 #define RARCH_LOG_OUTPUT(...) do { \
    logger_send("[OUTPUT] " __VA_ARGS__); \
-} while(0)
+} while (0)
 
 #define RARCH_LOG_OUTPUT_V(tag, fmt, vp) do { \
    logger_send("[OUTPUT] " tag); \
@@ -70,7 +77,7 @@ void logger_send_v(const char *__format, va_list args);
 
 #define RARCH_ERR(...) do { \
    logger_send("[ERROR] " __VA_ARGS__); \
-} while(0)
+} while (0)
 
 #define RARCH_ERR_V(tag, fmt, vp) do { \
    logger_send("[ERROR] " tag); \
@@ -79,7 +86,7 @@ void logger_send_v(const char *__format, va_list args);
 
 #define RARCH_WARN(...) do { \
    logger_send("[WARN] " __VA_ARGS__); \
-} while(0)
+} while (0)
 
 #define RARCH_WARN_V(tag, fmt, vp) do { \
    logger_send("[WARN] " tag); \
@@ -90,7 +97,7 @@ void logger_send_v(const char *__format, va_list args);
 
 #define RARCH_LOG(...) do { \
    logger_send("" __VA_ARGS__); \
-} while(0)
+} while (0)
 
 #define RARCH_LOG_V(tag, fmt, vp) do { \
    logger_send("" tag); \
@@ -99,7 +106,7 @@ void logger_send_v(const char *__format, va_list args);
 
 #define RARCH_ERR(...) do { \
    logger_send("[ERROR] " __VA_ARGS__); \
-} while(0)
+} while (0)
 
 #define RARCH_ERR_V(tag, fmt, vp) do { \
    logger_send("[ERROR] " tag); \
@@ -108,7 +115,7 @@ void logger_send_v(const char *__format, va_list args);
 
 #define RARCH_WARN(...) do { \
    logger_send("[WARN] " __VA_ARGS__); \
-} while(0)
+} while (0)
 
 #define RARCH_WARN_V(tag, fmt, vp) do { \
    logger_send("[WARN] :: " tag); \
@@ -117,7 +124,7 @@ void logger_send_v(const char *__format, va_list args);
 
 #define RARCH_LOG_OUTPUT(...) do { \
    logger_send("[OUTPUT] " __VA_ARGS__); \
-} while(0)
+} while (0)
 
 #define RARCH_LOG_OUTPUT_V(tag, fmt, vp) do { \
    logger_send("[OUTPUT] " tag); \
@@ -125,7 +132,7 @@ void logger_send_v(const char *__format, va_list args);
 } while (0)
 #endif
 
-#define RARCH_LOG_BUFFER(...) do { } while(0)
+#define RARCH_LOG_BUFFER(...) do { } while (0)
 
 #else /* HAVE_LOGGER */
 void RARCH_LOG_V(const char *tag, const char *fmt, va_list ap);
@@ -139,6 +146,16 @@ void RARCH_ERR(const char *fmt, ...);
 #define RARCH_WARN_V RARCH_LOG_V
 #define RARCH_ERR_V RARCH_LOG_V
 #endif /* HAVE_LOGGER */
+
+void rarch_log_file_init(
+      bool log_to_file,
+      bool log_to_file_timestamp,
+      const char *log_dir);
+
+void rarch_log_file_deinit(void);
+
+void rarch_log_file_set_override(const char *path);
+
 
 RETRO_END_DECLS
 

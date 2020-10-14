@@ -21,15 +21,15 @@
 
 #include <alsa/asoundlib.h>
 
-#include "../audio_driver.h"
+#include "../../retroarch.h"
 #include "../../verbosity.h"
 
 typedef struct alsa
 {
    snd_pcm_t *pcm;
    size_t buffer_size;
-   bool nonblock;
    unsigned int frame_bits;
+   bool nonblock;
    bool has_float;
    bool can_pause;
    bool is_paused;
@@ -180,6 +180,7 @@ error:
 #define BYTES_TO_FRAMES(bytes, frame_bits)  ((bytes) * 8 / frame_bits)
 #define FRAMES_TO_BYTES(frames, frame_bits) ((frames) * frame_bits / 8)
 
+static bool alsa_start(void *data, bool is_shutdown);
 static ssize_t alsa_write(void *data, const void *buf_, size_t size_)
 {
    alsa_t *alsa              = (alsa_t*)data;
@@ -187,6 +188,12 @@ static ssize_t alsa_write(void *data, const void *buf_, size_t size_)
    snd_pcm_sframes_t written = 0;
    snd_pcm_sframes_t size    = BYTES_TO_FRAMES(size_, alsa->frame_bits);
    size_t frames_size        = alsa->has_float ? sizeof(float) : sizeof(int16_t);
+
+   /* Workaround buggy menu code.
+    * If a write happens while we're paused, we might never progress. */
+   if (alsa->is_paused)
+      if (!alsa_start(alsa, false))
+         return -1;
 
    if (alsa->nonblock)
    {
@@ -269,6 +276,8 @@ static bool alsa_alive(void *data)
 static bool alsa_stop(void *data)
 {
    alsa_t *alsa = (alsa_t*)data;
+   if (alsa->is_paused)
+	  return true;
 
    if (alsa->can_pause
          && !alsa->is_paused)
@@ -293,6 +302,8 @@ static void alsa_set_nonblock_state(void *data, bool state)
 static bool alsa_start(void *data, bool is_shutdown)
 {
    alsa_t *alsa = (alsa_t*)data;
+   if (!alsa->is_paused)
+	  return true;
 
    if (alsa->can_pause
          && alsa->is_paused)
@@ -361,7 +372,7 @@ static void *alsa_device_list_new(void *data)
 
    n      = hints;
 
-   while (*n != NULL)
+   while (*n)
    {
       char *name = snd_device_name_get_hint(*n, "NAME");
       char *io   = snd_device_name_get_hint(*n, "IOID");

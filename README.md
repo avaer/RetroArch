@@ -1,5 +1,6 @@
 [![Build Status](https://travis-ci.org/libretro/RetroArch.svg?branch=master)](https://travis-ci.org/libretro/RetroArch)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/8936/badge.svg)](https://scan.coverity.com/projects/retroarch)
+[![Crowdin](https://badges.crowdin.net/retroarch/localized.svg)](https://crowdin.com/project/retroarch)
 
 # RetroArch
 
@@ -8,15 +9,17 @@ Popular examples of implementations for this API includes video game system emul
 more generalized 3D programs.
 These programs are instantiated as dynamic libraries. We refer to these as "libretro cores".
 
-![XMB menu driver](http://i.imgur.com/BMR1xxr.png "XMB menu driver")
+![XMB menu driver](docs/XMB-main-menu.jpg "XMB menu driver")
 
-![rgui menu driver](http://i.imgur.com/X3CbBKa.png "rgui menu driver")
+![rgui menu driver](docs/rgui-main-menu.jpg "rgui menu driver")
 
-![glui menu driver](http://i.imgur.com/ooqv8rw.png "glui menu driver")
+![glui menu driver](docs/glui-main-menu.jpg "glui menu driver")
+
+![ozone menu driver](docs/ozone-main-menu.jpg "ozone menu driver")
 
 ## libretro
 
-[libretro](http://libretro.com) is an API that exposes generic audio/video/input callbacks.
+[libretro](https://www.libretro.com) is an API that exposes generic audio/video/input callbacks.
 A frontend for libretro (such as RetroArch) handles video output, audio output, input and application lifecycle.
 A libretro core written in portable C or C++ can run seamlessly on many platforms with very little to no porting effort.
 
@@ -31,12 +34,12 @@ Latest binaries are currently hosted on the [buildbot](http://buildbot.libretro.
 
 ## Support
 
-To reach developers, either make an issue here on GitHub, make a thread on the [forum](http://www.libretro.com/forums/), chat on [Discord](https://discord.gg/C4amCeV), or visit our IRC channel: #retroarch @ irc.freenode.org.
+To reach developers, either make an issue here on GitHub, make a thread on the [forum](https://www.libretro.com/forums/), chat on [discord](https://discord.gg/C4amCeV), or visit our IRC channel: #retroarch @ irc.freenode.org. You could create a post in [Reddit](https://www.reddit.com/r/RetroArch/) with *Technical Support* flair.
 
 ## Documentation
 
 See our [Documentation Center](https://docs.libretro.com/). On Unix, man-pages are provided.
-More developer-centric stuff is found [here](https://github.com/libretro/libretro.github.com/wiki/Documentation-devs).
+More developer-centric stuff is found [here](https://docs.libretro.com/development/libretro-overview/).
 
 ## Related projects
 
@@ -72,6 +75,7 @@ RetroArch has been ported to the following platforms:
    - Haiku
    - Solaris
    - macOS (PPC, x86-32 and x86-64)
+   - PlayStation 2
    - PlayStation 3
    - PlayStation Portable
    - PlayStation Vita
@@ -80,7 +84,7 @@ RetroArch has been ported to the following platforms:
    - Nintendo GameCube
    - Nintendo Wii
    - Nintendo Wii U
-   - Nintendo 3DS
+   - Nintendo 3DS/2DS
    - Nintendo Switch
    - Nintendo NES/SNES Classic Edition
    - Raspberry Pi
@@ -105,7 +109,6 @@ OSX port of RetroArch requires latest versions of XCode to build.
 RetroArch can utilize these libraries if enabled:
 
    - nvidia-cg-toolkit
-   - libxml2 (GLSL XML shaders)
    - libfreetype2 (TTF font rendering on screen)
 
 RetroArch needs at least one of these audio driver libraries:
@@ -148,7 +151,7 @@ Instructions for compiling and installing RetroArch can be found in the [Libretr
 
 ## CRT 15Khz Resolution Switching
 
-CRT SwitchRes will turn on, on the fly. However, you will need to restart RetroArch to disable it. With CRT SwitchRes enable RetroArch will start in 2560 x 480 @ 60.  
+CRT SwitchRes will turn on, on the fly. However, you will need to restart RetroArch to disable it. With CRT SwitchRes enable RetroArch will start in 2560 x 480 @ 60.
 
 If you are running Windows, before enabling the CRT SwitchRes options please make sure you have installed CRTEmudriver and installed some modelines. The minimum modelines for all games to switch correctly are:
 
@@ -189,46 +192,46 @@ The default super resolution is 2560. It is displayed just under the CRT switch 
 
 If native resolutions are activated you will need a whole new set of modelines:
 
-- 512 x 240 @ 50.006977 SNESpal
+- 256 x 240 @ 50.006977 SNESpal
+- 256 x 448 @ 50.006977 SNESpal
 - 512 x 224 @ 50.006977 SNESpal
+- 512 x 240 @ 50.006977 SNESpal
 - 512 x 448 @ 50.006977 SNESpal
+- 256 x 240 @ 60.098812 SNESntsc
+- 256 x 448 @ 60.098812 SNESntsc
 - 512 x 240 @ 60.098812 SNESntsc
 - 512 x 224 @ 60.098812 SNESntsc
 - 512 x 448 @ 60.098812 SNESntsc
-- 256 x 240 @ 50.006977 SNESpal
-- 256 x 448 @ 50.006977 SNESpal
-- 256 x 240 @ 60.098812 SNESntsc
-- 256 x 448 @ 60.098812 SNESntsc
-- 320 x 240 @ 59.922745 MDntsc
-- 320 x 448 @ 59.922745 MDntp
-- 320 x 480 @ 59.922745 MDntsc
 - 256 x 192 @ 59.922745 MDntsc
-- 320 x 224 @ 59.922745 MDntsc
 - 256 x 224 @ 59.922745 MDntsc
-- 320 x 288 @ 49.701458 MDpal
-- 320 x 576 @ 49.701458 MDpal
+- 320 x 224 @ 59.922745 MDntsc
+- 320 x 240 @ 59.922745 MDntsc
+- 320 x 448 @ 59.922745 MDntsc
+- 320 x 480 @ 59.922745 MDntsc
 - 256 x 192 @ 49.701458 MDpal
+- 256 x 224 @ 49.701458 MDpal
 - 320 x 224 @ 49.701458 MDpal
 - 320 x 240 @ 49.701458 MDpal
+- 320 x 288 @ 49.701458 MDpal
 - 320 x 448 @ 49.701458 MDpal
 - 320 x 480 @ 49.701458 MDpal
-- 256 x 224 @ 49.701458 MDpal
+- 320 x 576 @ 49.701458 MDpal
 - 256 x 288 @ 49.701458 MSYSpal
 - 256 x 240 @ 60.098812 NESntsc
 - 256 x 240 @ 50.006977 NESpal
 
-- 640 x 480 @ 60.130001 N64ntsc
 - 640 x 237 @ 60.130001 N64ntsc
 - 640 x 240 @ 60.130001 N64ntsc
+- 640 x 480 @ 60.130001 N64ntsc
+- 640 x 288 @ 50.000000 N64pal
 - 640 x 480 @ 50.000000 N64pal
-- 640 x 576 @ 50.000000 n64pal
-- 640 x 288 @ 50.000000 n64pal
+- 640 x 576 @ 50.000000 N64pal
 
 - 256 x 252 @ 49.759998 PSXpal
-- 384 x 252 @ 49.759998 PSXpal
-- 640 x 540 @ 49.759998 PSXpal
 - 320 x 252 @ 49.759998 PSXpal
+- 384 x 252 @ 49.759998 PSXpal
 - 640 x 252 @ 49.759998 PSXpal
+- 640 x 540 @ 49.759998 PSXpal
 
 - 384 x 240 @ 59.941002 PSXntsc
 - 256 x 480 @ 59.941002 PSXntsc
@@ -257,3 +260,23 @@ These modelines are more accurate giving exact hz. However, some games may have 
 Some arcade resolutions can be very different from consumer CRTs. There is resolution detection to ensure MAME games will be displayed in the closest available resolution but drawn at their native resolution within this resolution. Meaning that the MAME game will look just like the original hardware.
 
 MAME ROMs that run in a vertical aspect like DoDonPachi need to be rotated within MAME before resolution switching and aspect correction will work. Do this before enabling CRT SwitchRes so that RetroArch will run in your desktop resolution. Once you have rotated any games that may need it turn CRT SwitchRes on.
+
+## Socials
+
+The links below belong to our official channels. Links other than this may have been created by fans, independent members or followers. We seriously recommend using our original resources.
+
+- [Website](https://www.retroarch.com/)
+- [Blog](https://libretro.com/)
+- [Facebook](https://www.facebook.com/libretro)
+- [Twitter](https://twitter.com/libretro)
+- [Reddit](https://www.reddit.com/r/RetroArch/)
+- [YouTube](https://www.youtube.com/Libretro)
+- [Google Post](https://posts.google.com/share/55Nhs2jG)
+- [Steam](https://store.steampowered.com/app/1118310/RetroArch/)
+- [YouTube Topic](https://www.youtube.com/channel/UC5q007PYyQPgin0HHbzF0zQ)
+- [Patreon](https://www.patreon.com/libretro)
+- [BOUNTYSOURCE](https://www.bountysource.com/teams/libretro/issues)
+- [Discord](https://discord.gg/27Xxm2h)
+- [Teespring](https://teespring.com/stores/retroarch)
+- [Documentation](https://docs.libretro.com/)
+- [Forum](https://forums.libretro.com/)

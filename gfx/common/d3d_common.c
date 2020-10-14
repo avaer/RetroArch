@@ -12,8 +12,12 @@
  *  You should have received a copy of the GNU General Public License along with RetroArch.
  *  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <math.h>
+
+#include <string/stdstring.h>
 
 #include "../../configuration.h"
+#include "../../input/input_driver.h"
 #include "../../verbosity.h"
 
 #include "d3d_common.h"
@@ -34,7 +38,6 @@ void *d3d_matrix_transpose(void *_pout, const void *_pm)
    }
    return pout;
 }
-
 
 void *d3d_matrix_identity(void *_pout)
 {
@@ -88,8 +91,10 @@ void *d3d_matrix_multiply(void *_pout,
    for (i = 0; i < 4; i++)
    {
       for (j = 0; j < 4; j++)
-         pout->m[i][j] = pm1->m[i][0] * pm2->m[0][j] + pm1->m[i][1] * pm2->m[1][j] + 
-                         pm1->m[i][2] * pm2->m[2][j] + pm1->m[i][3] * pm2->m[3][j];
+         pout->m[i][j] = pm1->m[i][0] *
+            pm2->m[0][j] + pm1->m[i][1] * pm2->m[1][j] +
+                           pm1->m[i][2] * pm2->m[2][j] +
+                           pm1->m[i][3] * pm2->m[3][j];
    }
    return pout;
 }
@@ -113,7 +118,8 @@ int32_t d3d_translate_filter(unsigned type)
       case RARCH_FILTER_UNSPEC:
          {
             settings_t *settings = config_get_ptr();
-            if (!settings->bools.video_smooth)
+            bool video_smooth    = settings->bools.video_smooth;
+            if (!video_smooth)
                break;
          }
          /* fall-through */
@@ -124,4 +130,49 @@ int32_t d3d_translate_filter(unsigned type)
    }
 
    return (int32_t)D3D_TEXTURE_FILTER_POINT;
+}
+
+void d3d_input_driver(const char* input_name, const char* joypad_name,
+      input_driver_t** input, void** input_data)
+{
+#if defined(__WINRT__)
+   /* Plain xinput is supported on UWP, but it
+    * supports joypad only (uwp driver was added later) */
+   if (string_is_equal(input_name, "xinput"))
+   {
+      void *xinput = input_driver_init_wrap(&input_xinput, joypad_name);
+      *input       = xinput ? (input_driver_t*)&input_xinput : NULL;
+      *input_data  = xinput;
+   }
+   else
+   {
+      void *uwp    = input_driver_init_wrap(&input_uwp, joypad_name);
+      *input       = uwp ? (input_driver_t*)&input_uwp : NULL;
+      *input_data  = uwp;
+   }
+#elif defined(_XBOX)
+   void *xinput    = input_driver_init_wrap(&input_xinput, joypad_name);
+   *input          = xinput ? (input_driver_t*)&input_xinput : NULL;
+   *input_data     = xinput;
+#else
+#if _WIN32_WINNT >= 0x0501
+#ifdef HAVE_WINRAWINPUT
+   /* winraw only available since XP */
+   if (string_is_equal(input_name, "raw"))
+   {
+      *input_data = input_driver_init_wrap(&input_winraw, joypad_name);
+      if (*input_data)
+      {
+         *input = &input_winraw;
+         return;
+      }
+   }
+#endif
+#endif
+
+#ifdef HAVE_DINPUT
+   *input_data = input_driver_init_wrap(&input_dinput, joypad_name);
+   *input      = *input_data ? &input_dinput : NULL;
+#endif
+#endif
 }

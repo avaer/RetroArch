@@ -4,23 +4,53 @@ TEMP_C=.tmp.c
 TEMP_CXX=.tmp.cxx
 TEMP_EXE=.tmp
 
+CC="${CC:-}"
+CXX="${CXX:-}"
+PKG_CONF_PATH="${PKG_CONF_PATH:-}"
+WINDRES="${WINDRES:-}"
+
 # Checking for working C compiler
 cat << EOF > "$TEMP_C"
 #include <stdio.h>
 int main(void) { puts("Hai world!"); return 0; }
 EOF
 
+# test_compiler:
+# Check that the compiler exists in the $PATH and works
+# $1 = compiler
+# $2 = temporary build file
+test_compiler ()
+{
+	compiler=
+
+	for comp in $(printf %s "$1"); do
+		if ! next "$comp"; then
+			compiler="${compiler} $(exists "${comp}")" ||
+				return 1
+		fi
+	done
+
+	$(printf %s "$1") -o "$TEMP_EXE" "$2" >/dev/null 2>&1 || return 1
+
+	compiler="${compiler# }"
+	return 0
+}
+
+printf %s 'Checking for suitable working C compiler ... '
+
 cc_works=0
-HAVE_CC=no
+add_opt CC no
+
 if [ "$CC" ]; then
-	"$CC" -o "$TEMP_EXE" "$TEMP_C" >/dev/null 2>&1 && cc_works=1
+	if test_compiler "$CC" "$TEMP_C"; then
+		cc_works=1
+	fi
 else
 	for cc in gcc cc clang; do
-		CC="$(exists "${CROSS_COMPILE}${cc}")" || CC=""
-		if [ "$CC" ]; then
-			"$CC" -o "$TEMP_EXE" "$TEMP_C" >/dev/null 2>&1 && {
-				cc_works=1; break
-			}
+		if test_compiler "${CROSS_COMPILE}${cc}" "$TEMP_C"; then
+			CC="$compiler"
+			cc_works=1
+			break
 		fi
 	done
 fi
@@ -35,7 +65,7 @@ elif [ -z "$CC" ]; then
 	cc_status='not found'
 fi
 
-echo "Checking for suitable working C compiler ... $CC $cc_status"
+printf %s\\n "$CC $cc_status"
 
 if [ "$cc_works" = '0' ] && [ "$USE_LANG_C" = 'yes' ]; then
 	die 1 'Error: Cannot proceed without a working C compiler.'
@@ -47,17 +77,21 @@ cat << EOF > "$TEMP_CXX"
 int main() { std::cout << "Hai guise" << std::endl; return 0; }
 EOF
 
+printf %s 'Checking for suitable working C++ compiler ... '
+
 cxx_works=0
-HAVE_CXX=no
+add_opt CXX no
+
 if [ "$CXX" ]; then
-	"$CXX" -o "$TEMP_EXE" "$TEMP_CXX" >/dev/null 2>&1 && cxx_works=1
+	if test_compiler "$CXX" "$TEMP_CXX"; then
+		cxx_works=1
+	fi
 else
 	for cxx in g++ c++ clang++; do
-		CXX="$(exists "${CROSS_COMPILE}${cxx}")" || CXX=""
-		if [ "$CXX" ]; then
-			"$CXX" -o "$TEMP_EXE" "$TEMP_CXX" >/dev/null 2>&1 && {
-				cxx_works=1; break
-			}
+		if test_compiler "${CROSS_COMPILE}${cxx}" "$TEMP_CXX"; then
+			CXX="$compiler"
+			cxx_works=1
+			break
 		fi
 	done
 fi
@@ -72,53 +106,30 @@ elif [ -z "$CXX" ]; then
 	cxx_status='not found'
 fi
 
-echo "Checking for suitable working C++ compiler ... $CXX $cxx_status"
+printf %s\\n "$CXX $cxx_status"
 
 if [ "$cxx_works" = '0' ] && [ "$USE_LANG_CXX" = 'yes' ]; then
 	die : 'Warning: A working C++ compiler was not found, C++ features will be disabled.'
 fi
 
 if [ "$OS" = "Win32" ]; then
-	echobuf="Checking for windres"
-	if [ -z "$WINDRES" ]; then
-		WINDRES="$(exists "${CROSS_COMPILE}windres")" || WINDRES=""
-		[ -z "$WINDRES" ] && die 1 "$echobuf ... Not found. Exiting."
-	fi
-	echo "$echobuf ... $WINDRES"
-fi
+	printf %s 'Checking for windres ... '
 
-if [ "$HAVE_QT" != "no" ]; then
-	echobuf="Checking for moc"
-	if [ -z "$MOC" ]; then
-		MOC_PATH="none"
-		for moc in moc-qt5 moc; do
-			MOC="$(exists "$moc")" || MOC=""
-			[ "${MOC}" ] && {
-				MOC_PATH="$MOC"
-				break
-			}
-		done
-	fi
+	WINDRES="${WINDRES:-$(exists "${CROSS_COMPILE}windres" || :)}"
 
-	echo "$echobuf ... $MOC_PATH"
+	printf %s\\n "${WINDRES:=none}"
 
-	if [ "$MOC_PATH" = "none" ]; then
-		die : 'Warning: moc not found, Qt companion support will be disabled.'
+	if [ "$WINDRES" = none ]; then
+		die 1 'Error: Cannot proceed without windres.'
 	fi
 fi
 
-if [ -z "$PKG_CONF_PATH" ]; then
-	PKG_CONF_PATH="none"
-	for pkgconf in pkgconf pkg-config; do
-		PKGCONF="$(exists "${CROSS_COMPILE}${pkgconf}")" || PKGCONF=""
-		[ "$PKGCONF" ] && {
-			PKG_CONF_PATH="$PKGCONF"
-			break
-		}
-	done
-fi
+printf %s 'Checking for pkg-config ... '
 
-echo "Checking for pkg-config ... $PKG_CONF_PATH"
+PKG_CONF_PATH="${PKG_CONF_PATH:-$(exists "${CROSS_COMPILE}pkgconf" ||
+	exists "${CROSS_COMPILE}pkg-config" || :)}"
+
+printf %s\\n "${PKG_CONF_PATH:=none}"
 
 if [ "$PKG_CONF_PATH" = "none" ]; then
 	die : 'Warning: pkg-config not found, package checks will fail.'

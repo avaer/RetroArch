@@ -17,17 +17,16 @@
 #include <string.h>
 #include <malloc.h>
 
-#include "../audio_driver.h"
+#include "../../retroarch.h"
 #include "../../ctr/ctr_debug.h"
 
 typedef struct
 {
-   bool nonblocking;
-   bool playing;
+   ndspWaveBuf dsp_buf; /* TODO/FIXME - find out alignment */
    int channel;
-   ndspWaveBuf dsp_buf;
-
    uint32_t pos;
+   bool nonblock;
+   bool playing;
 } ctr_dsp_audio_t;
 
 #define CTR_DSP_AUDIO_COUNT       (1u << 11u)
@@ -102,12 +101,21 @@ static ssize_t ctr_dsp_audio_write(void *data, const void *buf, size_t size)
       (((ctr->pos - sample_pos ) & CTR_DSP_AUDIO_COUNT_MASK) < (CTR_DSP_AUDIO_COUNT >> 4)) ||
       (((sample_pos  - ctr->pos) & CTR_DSP_AUDIO_COUNT_MASK) < (size >> 2)))
    {
-      if (ctr->nonblocking)
+      if (ctr->nonblock)
          ctr->pos = (sample_pos + (CTR_DSP_AUDIO_COUNT >> 1)) & CTR_DSP_AUDIO_COUNT_MASK;
       else
       {
          do{
             svcSleepThread(100000);
+
+            /* Run aptMainLoop to update APT state if DSP state
+             * changed, this prevents a hang on sleep. */
+            if(!aptMainLoop())
+            {
+               command_event(CMD_EVENT_QUIT, NULL);
+               return true;
+            }
+
             sample_pos = ndspChnGetSamplePos(ctr->channel);
          }while (((sample_pos - (ctr->pos + (size >>2))) & CTR_DSP_AUDIO_COUNT_MASK) > (CTR_DSP_AUDIO_COUNT >> 1)
                  || (((ctr->pos - (CTR_DSP_AUDIO_COUNT >> 4) - sample_pos) & CTR_DSP_AUDIO_COUNT_MASK) > (CTR_DSP_AUDIO_COUNT >> 1)));
@@ -173,7 +181,7 @@ static void ctr_dsp_audio_set_nonblock_state(void *data, bool state)
 {
    ctr_dsp_audio_t* ctr = (ctr_dsp_audio_t*)data;
    if (ctr)
-      ctr->nonblocking = state;
+      ctr->nonblock = state;
 }
 
 static bool ctr_dsp_audio_use_float(void *data)
@@ -195,7 +203,6 @@ static size_t ctr_dsp_audio_buffer_size(void *data)
    return CTR_DSP_AUDIO_COUNT;
 }
 
-
 audio_driver_t audio_ctr_dsp = {
    ctr_dsp_audio_init,
    ctr_dsp_audio_write,
@@ -211,4 +218,3 @@ audio_driver_t audio_ctr_dsp = {
    ctr_dsp_audio_write_avail,
    ctr_dsp_audio_buffer_size
 };
-

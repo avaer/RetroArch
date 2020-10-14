@@ -1,15 +1,23 @@
-die() # $1 = exit code, use : to not exit when printing warnings $@ = exit or warning messages
-{
-	ret="$1"
-	shift 1
-	printf %s\\n "$@" >&2
-	case "$ret" in
-		: ) return 0 ;;
-		* ) exit "$ret" ;;
-	esac
+# add_opt
+# $1 = HAVE_$1
+# $2 = value ['auto', 'no' or 'yes', checked only if non-empty]
+add_opt()
+{	setval="$(eval "printf %s \"\$USER_$1\"")"
+	[ "${2:-}" ] && ! match "$setval" no yes && eval "HAVE_$1=\"$2\""
+
+	for opt in $(printf %s "$CONFIG_OPTS"); do
+		case "$opt" in
+			"$1") return 0 ;;
+		esac
+	done
+
+	CONFIG_OPTS="${CONFIG_OPTS} $1"
 }
 
-print_help_option() # $1 = option $@ = description
+# print_help_option
+# $1 = option
+# $@ = description
+print_help_option()
 {
 	_opt="$1"
 	shift 1
@@ -38,39 +46,36 @@ EOF
 	print_help_option "--datarootdir=PATH"       "Read-only data install directory"
 	print_help_option "--docdir=PATH"            "Documentation install directory"
 	print_help_option "--mandir=PATH"            "Manpage install directory"
-	print_help_option "--global-config-dir=PATH" "System wide config file prefix (Deprecated)"
 	print_help_option "--build=BUILD"            "The build system (no-op)"
 	print_help_option "--host=HOST"              "Cross-compile with HOST-gcc instead of gcc"
 	print_help_option "--help"                   "Show this help"
 
-	echo ""
-	echo "Custom options:"
+	printf %s\\n '' 'Custom options:'
 
-	while read -r VAR COMMENT; do
-		TMPVAR="${VAR%=*}"
-		COMMENT="${COMMENT#*#}"
-		VAL="${VAR#*=}"
-		VAR="$(echo "${TMPVAR#HAVE_}" | tr '[:upper:]' '[:lower:]')"
+	while read -r VAR _ COMMENT; do
 		case "$VAR" in
-			'c89_'*) continue;;
+			'C89_'*|'CXX_'*) continue;;
 			*)
+			TMPVAR="${VAR%=*}"
+			VAL="${VAR#*=}"
+			VAR="$(printf %s "${TMPVAR#HAVE_}" | tr '[:upper:]' '[:lower:]')"
 			case "$VAL" in
 				'yes'*)
-					print_help_option "--disable-$VAR" "Disable $COMMENT";;
+					print_help_option "--disable-$VAR" "Disable  $COMMENT";;
 				'no'*)
-					print_help_option "--enable-$VAR" "Enable  $COMMENT";;
+					print_help_option "--enable-$VAR" "Enable   $COMMENT";;
 				'auto'*)
-					print_help_option "--enable-$VAR" "Enable  $COMMENT"
-					print_help_option "--disable-$VAR" "Disable $COMMENT";;
+					print_help_option "--enable-$VAR" "Enable   $COMMENT"
+					print_help_option "--disable-$VAR" "Disable  $COMMENT";;
 				*)
-					print_help_option "--with-$VAR" "Config  $COMMENT";;
+					print_help_option "--with-$VAR" "Config   $COMMENT";;
 			esac
 		esac
 	done < 'qb/config.params.sh'
 }
 
 opt_exists() # $opt is returned if exists in OPTS
-{	opt="$(echo "$1" | tr '[:lower:]' '[:upper:]')"
+{	opt="$(printf %s "$1" | tr '[:lower:]' '[:upper:]')"
 	err="$2"
 	eval "set -- $OPTS"
 	for OPT do [ "$opt" = "$OPT" ] && return; done
@@ -78,17 +83,28 @@ opt_exists() # $opt is returned if exists in OPTS
 }
 
 parse_input() # Parse stuff :V
-{	OPTS=; while read -r VAR _; do
+{	BUILD=''
+	OPTS=''
+	CONFIG_OPTS=''
+	config_opts='./configure'
+
+	while read -r VAR _; do
 		TMPVAR="${VAR%=*}"
-		OPTS="$OPTS ${TMPVAR##HAVE_}"
+		NEWVAR="${TMPVAR##HAVE_}"
+		OPTS="${OPTS} $NEWVAR"
+		case "$TMPVAR" in
+			HAVE_*) CONFIG_OPTS="${CONFIG_OPTS} $NEWVAR" ;;
+		esac
+		eval "USER_$NEWVAR=auto"
 	done < 'qb/config.params.sh'
 	#OPTS contains all available options in config.params.sh - used to speedup
 	#things in opt_exists()
-	
-	while [ "$1" ]; do
+
+	while [ $# -gt 0 ]; do
+		config_opts="${config_opts} $1"
 		case "$1" in
 			--prefix=*) PREFIX=${1##--prefix=};;
-			--global-config-dir=*|--sysconfdir=*) GLOBAL_CONFIG_DIR="${1#*=}";;
+			--sysconfdir=*) GLOBAL_CONFIG_DIR="${1#*=}";;
 			--bindir=*) BIN_DIR="${1#*=}";;
 			--build=*) BUILD="${1#*=}";;
 			--datarootdir=*) SHARE_DIR="${1#*=}";;
@@ -98,11 +114,13 @@ parse_input() # Parse stuff :V
 			--enable-*)
 				opt_exists "${1##--enable-}" "$1"
 				eval "HAVE_$opt=yes"
+				eval "USER_$opt=yes"
 			;;
 			--disable-*)
 				opt_exists "${1##--disable-}" "$1"
 				eval "HAVE_$opt=no"
-				eval "HAVE_NO_$opt=yes"
+				eval "USER_$opt=no"
+				add_opt "NO_$opt" yes
 			;;
 			--with-*)
 				arg="${1##--with-}"
@@ -111,10 +129,23 @@ parse_input() # Parse stuff :V
 				eval "$opt=\"$val\""
 			;;
 			-h|--help) print_help; exit 0;;
+			--) break ;;
+			'') : ;;
 			*) die 1 "Unknown option $1";;
 		esac
 		shift
 	done
+
+	cat > config.log << EOF
+Command line invocation:
+
+  \$ ${config_opts}
+
+## ----------- ##
+## Core Tests. ##
+## ----------- ##
+
+EOF
 }
 
 . qb/config.params.sh
