@@ -1,9 +1,11 @@
+import * as THREE from './three.module.js';
+
 /**
  * RetroArch Web Player
  *
  * This provides the basic JavaScript for the RetroArch web player.
  */
-var BrowserFS = BrowserFS;
+// var BrowserFS = BrowserFS;
 var afs;
 
 function cleanupStorage()
@@ -294,28 +296,6 @@ function uploadData(data,name)
    FS.unlink(name);
 }
 
-var Module =
-{
-  noInitialRun: true,
-  arguments: ["-v", "--menu"],
-  preRun: [],
-  postRun: [],
-  print: function(text)
-  {
-     console.log(text);
-  },
-  printErr: function(text)
-  {
-     console.log(text);
-  },
-  canvas: document.getElementById('canvas'),
-  totalDependencies: 0,
-  monitorRunDependencies: function(left)
-  {
-     this.totalDependencies = Math.max(this.totalDependencies, left);
-  }
-};
-
 function switchCore(corename) {
    localStorage.setItem("core", corename);
 }
@@ -330,6 +310,27 @@ function switchStorage(backend) {
 
 // When the browser has loaded everything.
 $(function() {
+  globalThis.Module = {
+    noInitialRun: true,
+    arguments: ["-v", "--menu"],
+    preRun: [],
+    postRun: [],
+    print: function(text)
+    {
+       console.log(text);
+    },
+    printErr: function(text)
+    {
+       console.log(text);
+    },
+    canvas: document.getElementById('canvas'),
+    totalDependencies: 0,
+    monitorRunDependencies: function(left)
+    {
+       this.totalDependencies = Math.max(this.totalDependencies, left);
+    }
+  };
+  
    // Enable all available ToolTips.
    $('.tooltip-enable').tooltip({
       placement: 'right'
@@ -391,7 +392,7 @@ function keyPress(k)
    setTimeout(function(){kp(k, "keyup")}, 50);
 }
 
-kp = function(k, event) {
+var kp = function(k, event) {
    var oEvent = new KeyboardEvent(event, { code: k });
 
    document.dispatchEvent(oEvent);
