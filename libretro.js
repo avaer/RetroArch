@@ -28,45 +28,50 @@ function cleanupStorage()
 
 function idbfsInit()
 {
-   $('#icnLocal').removeClass('fa-globe');
-   $('#icnLocal').addClass('fa-spinner fa-spin');
-   var imfs = new BrowserFS.FileSystem.InMemory();
-   if (BrowserFS.FileSystem.IndexedDB.isAvailable())
-   {
-      afs = new BrowserFS.FileSystem.AsyncMirror(imfs,
-         new BrowserFS.FileSystem.IndexedDB(function(e, fs)
-      {
-         if (e)
-         {
-            //fallback to imfs
-            afs = new BrowserFS.FileSystem.InMemory();
-            console.log("WEBPLAYER: error: " + e + " falling back to in-memory filesystem");
-            setupFileSystem("browser").then(() => {
-              preLoadingComplete();
-            });
-         }
-         else
-         {
-            // initialize afs by copying files from async storage to sync storage.
-            afs.initialize(function (e)
-            {
-               if (e)
-               {
-                  afs = new BrowserFS.FileSystem.InMemory();
-                  console.log("WEBPLAYER: error: " + e + " falling back to in-memory filesystem");
-                  setupFileSystem("browser").then(() => {
-                    preLoadingComplete();
-                  });
-               }
-               else
-               {
-                  idbfsSyncComplete();
-               }
-            });
-         }
-      },
-      "RetroArch"));
-   }
+   return new Promise((accept, reject) => {
+     $('#icnLocal').removeClass('fa-globe');
+     $('#icnLocal').addClass('fa-spinner fa-spin');
+     var imfs = new BrowserFS.FileSystem.InMemory();
+     if (BrowserFS.FileSystem.IndexedDB.isAvailable())
+     {
+        afs = new BrowserFS.FileSystem.AsyncMirror(imfs,
+           new BrowserFS.FileSystem.IndexedDB(function(e, fs)
+        {
+           if (e)
+           {
+              //fallback to imfs
+              afs = new BrowserFS.FileSystem.InMemory();
+              console.log("WEBPLAYER: error: " + e + " falling back to in-memory filesystem");
+              setupFileSystem("browser").then(() => {
+                preLoadingComplete();
+                accept();
+              });
+           }
+           else
+           {
+              // initialize afs by copying files from async storage to sync storage.
+              afs.initialize(function (e)
+              {
+                 if (e)
+                 {
+                    afs = new BrowserFS.FileSystem.InMemory();
+                    console.log("WEBPLAYER: error: " + e + " falling back to in-memory filesystem");
+                    setupFileSystem("browser").then(() => {
+                      preLoadingComplete();
+                      accept();
+                    });
+                 }
+                 else
+                 {
+                    idbfsSyncComplete();
+                    accept();
+                 }
+              });
+           }
+        },
+        "RetroArch"));
+     }
+   });
 }
 
 function idbfsSyncComplete()
@@ -80,6 +85,75 @@ function idbfsSyncComplete()
    });
 }
 
+function _getCoreNameForFileName(fileName) {
+  const match = fileName.match(/\.([^\.]+)$/);
+  const ext = match ? match[1].toLowerCase() : '';
+  switch (ext) {
+    case 'md':
+      return 'genesis_plus_gx';
+    case 'n64':
+    case 'z64':
+      // return 'parallel_n64';
+      return 'parallel_n64';
+    case 'cue':
+      // return 'pcsx_rearmed';
+      return 'pcsx_rearmed';
+      // return 'mednafen_psx_hw';
+    default: return null;
+  }
+}
+function loadFiles(files) {
+  const mainFile = files.find(file => /\.(?:md|n64|z64|cue)$/i.test(file.name));
+  const mainFileName = mainFile ? mainFile.name : null;
+  const core = mainFileName ? _getCoreNameForFileName(mainFileName) : null;
+  if (core) {
+   // Load the Core's related JavaScript.
+   $.getScript(core + '_libretro.js', function ()
+   {
+      $('#icnRun').removeClass('fa-spinner').removeClass('fa-spin');
+      $('#icnRun').addClass('fa-play');
+      $('#lblDrop').removeClass('active');
+      $('#lblLocal').addClass('active');
+      idbfsInit().then(() =>
+        Promise.all(
+          files.map(file =>
+            new Promise((accept, reject) => {
+              const fr = new FileReader();
+              fr.onload = () => {
+                const fileData = fr.result;
+                const fileName = file.name;
+
+                const dataView = new Uint8Array(fileData);
+                FS.createDataFile('/', fileName, dataView, true, false);
+
+                const data = FS.readFile(fileName, {
+                  encoding: 'binary'
+                });
+                const filePath = '/home/web_user/retroarch/userdata/content/' + fileName;
+                FS.writeFile('/home/web_user/retroarch/userdata/content/' + fileName, data, {
+                  encoding: 'binary'
+                });
+                FS.unlink(fileName);
+
+                accept();
+              };
+              fr.onerror = err => {
+                reject(err);
+              };
+              fr.readAsArrayBuffer(file);
+            })
+          )
+        )
+      ).then(() => {
+        startRetroArch(['-v', '/home/web_user/retroarch/userdata/content/' + mainFileName]);
+      });
+   });
+  } else {
+    const err = new Error('could not detect file for ' + mainFileName);
+    console.warn(err);
+  }
+}
+
 function preLoadingComplete()
 {
    /* Make the Preview image clickable to start RetroArch. */
@@ -90,6 +164,14 @@ function preLoadingComplete()
   document.getElementById("btnRun").disabled = false;
   $('#btnRun').removeClass('disabled');
 }
+window.addEventListener('dragover', e => {
+  e.preventDefault();
+});
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const files = Array.from(e.dataTransfer.files);
+  loadFiles(files);
+});
 
 async function setupFileSystem(backend)
 {
@@ -152,7 +234,7 @@ function getParam(name) {
   }
 }
 
-function startRetroArch()
+function startRetroArch(args)
 {
    $('.webplayer').show();
    $('.webplayer-preview').hide();
@@ -170,8 +252,7 @@ function startRetroArch()
 
    // console.log('arguments', Module['arguments']);
 
-   const filePath = '/home/web_user/retroarch/userdata/content/downloads/Star Fox 64 (U) (V1.1) [!].z64';
-   Module['arguments'] = ['-v', filePath];
+   Module['arguments'] = args;
 
    Module['callMain'](Module['arguments']);
    document.getElementById('canvas').focus();
@@ -301,28 +382,6 @@ $(function() {
    $('#core-selector a').click(function () {
       var coreChoice = $(this).data('core');
       switchCore(coreChoice);
-   });
-
-   // Find which core to load.
-   // var core = localStorage.getItem("core", core);
-   var core = 'parallel_n64';
-   // var core = 'genesis_plus_gx';
-   // console.log('got core', core);
-   if (!core) {
-      core = 'gambatte';
-   }
-   // Make the core the selected core in the UI.
-   var coreTitle = $('#core-selector a[data-core="' + core + '"]').addClass('active').text();
-   $('#dropdownMenu1').text(coreTitle);
-
-   // Load the Core's related JavaScript.
-   $.getScript(core + '_libretro.js', function ()
-   {
-      $('#icnRun').removeClass('fa-spinner').removeClass('fa-spin');
-      $('#icnRun').addClass('fa-play');
-      $('#lblDrop').removeClass('active');
-      $('#lblLocal').addClass('active');
-      idbfsInit();
    });
  });
 
