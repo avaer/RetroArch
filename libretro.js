@@ -153,6 +153,10 @@ function startRetroArch()
    document.getElementById("btnMenu").disabled = false;
    document.getElementById("btnFullscreen").disabled = false;
 
+   console.log('arguments', Module['arguments']);
+
+   const filePath = '/home/web_user/retroarch/userdata/content/downloads/Star Fox 64 (U) (V1.1) [!].z64';
+
    Module['callMain'](Module['arguments']);
    document.getElementById('canvas').focus();
 }
@@ -196,7 +200,7 @@ function uploadData(data,name)
 var Module =
 {
   noInitialRun: true,
-  arguments: ["-v", "--menu"],
+  arguments: ["-v"/*, "--menu"*/],
   preRun: [],
   postRun: [],
   print: function(text)
