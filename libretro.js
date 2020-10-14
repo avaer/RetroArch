@@ -269,7 +269,10 @@ $(function() {
    });
 
    // Find which core to load.
-   var core = localStorage.getItem("core", core);
+   // var core = localStorage.getItem("core", core);
+   var core = 'parallel_n64';
+   // var core = 'genesis_plus_gx';
+   // console.log('got core', core);
    if (!core) {
       core = 'gambatte';
    }
