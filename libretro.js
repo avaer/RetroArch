@@ -41,8 +41,9 @@ function idbfsInit()
             //fallback to imfs
             afs = new BrowserFS.FileSystem.InMemory();
             console.log("WEBPLAYER: error: " + e + " falling back to in-memory filesystem");
-            setupFileSystem("browser");
-            preLoadingComplete();
+            setupFileSystem("browser").then(() => {
+              preLoadingComplete();
+            });
          }
          else
          {
@@ -53,8 +54,9 @@ function idbfsInit()
                {
                   afs = new BrowserFS.FileSystem.InMemory();
                   console.log("WEBPLAYER: error: " + e + " falling back to in-memory filesystem");
-                  setupFileSystem("browser");
-                  preLoadingComplete();
+                  setupFileSystem("browser").then(() => {
+                    preLoadingComplete();
+                  });
                }
                else
                {
@@ -73,8 +75,9 @@ function idbfsSyncComplete()
    $('#icnLocal').addClass('fa-check');
    console.log("WEBPLAYER: idbfs setup successful");
 
-   setupFileSystem("browser");
-   preLoadingComplete();
+   setupFileSystem("browser").then(() => {
+     preLoadingComplete();
+   });
 }
 
 function preLoadingComplete()
@@ -88,7 +91,7 @@ function preLoadingComplete()
   $('#btnRun').removeClass('disabled');
 }
 
-function setupFileSystem(backend)
+async function setupFileSystem(backend)
 {
    /* create a mountable filesystem that will server as a root
       mountpoint for browserfs */
@@ -102,7 +105,7 @@ function setupFileSystem(backend)
       (".index-xhr", "/assets/cores/");
 
    console.log("WEBPLAYER: initializing filesystem: " + backend);
-   mfs.mount('/home/web_user/retroarch/userdata', afs);
+   mfs.mount('/home/web_user/retroarch/userdata', afs); 
 
    mfs.mount('/home/web_user/retroarch/bundle', xfs1);
    mfs.mount('/home/web_user/retroarch/userdata/content/downloads', xfs2);
@@ -111,7 +114,19 @@ function setupFileSystem(backend)
    FS.mount(BFS, {root: '/home'}, '/home');
    console.log("WEBPLAYER: " + backend + " filesystem initialization successful");
 
-   window.mfs = mfs;
+   // window.FS = FS;
+   try {
+     const config = FS.readFile('/home/web_user/retroarch/userdata/retroarch.cfg', {encoding: 'utf8'});
+     console.log('got old config', config);
+   } catch(err) {
+     console.warn(err);
+   }
+   const res = await fetch('./retroarch.cfg');
+   const text = await res.text();
+   FS.writeFile('/home/web_user/retroarch/userdata/retroarch.cfg', text, {
+     encoding: 'binary',
+   });
+   /* window.mfs = mfs;
    const _recurse = () => new Promise((accept, reject) => {
      try {
        const cfgFile = mfs.readFileSync('/home/web_user/retroarch/userdata/retroarch.cfg', null, {pathExistsAction(){return 0;},isReadable(){return true}});
@@ -124,7 +139,7 @@ function setupFileSystem(backend)
    _recurse()
      .then(a => {
        console.log('got cfg file data', a);
-     });
+     }); */
 }
 
 /**
@@ -153,9 +168,10 @@ function startRetroArch()
    document.getElementById("btnMenu").disabled = false;
    document.getElementById("btnFullscreen").disabled = false;
 
-   console.log('arguments', Module['arguments']);
+   // console.log('arguments', Module['arguments']);
 
    const filePath = '/home/web_user/retroarch/userdata/content/downloads/Star Fox 64 (U) (V1.1) [!].z64';
+   Module['arguments'] = ['-v', filePath];
 
    Module['callMain'](Module['arguments']);
    document.getElementById('canvas').focus();
@@ -200,7 +216,7 @@ function uploadData(data,name)
 var Module =
 {
   noInitialRun: true,
-  arguments: ["-v"/*, "--menu"*/],
+  arguments: ["-v", "--menu"],
   preRun: [],
   postRun: [],
   print: function(text)
