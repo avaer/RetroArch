@@ -131,7 +131,7 @@ function setupFileSystem(backend)
  * Retrieve the value of the given GET parameter.
  */
 function getParam(name) {
-  var results = new RegExp('[?&]' + name + '=([^&#]*)').exec(window.location.href);
+  var results = new RegExp('[\?&]' + name + '=([^&#]*)').exec(window.location.href);
   if (results) {
     return results[1] || null;
   }
@@ -164,7 +164,7 @@ function selectFiles(files)
    $('#icnAdd').addClass('fa-spinner spinning');
    var count = files.length;
 
-   for (var i = 0; i < count; i++)
+   for (var i = 0; i < files.length; i++)
    {
       filereader = new FileReader();
       filereader.file_name = files[i].name;
