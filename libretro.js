@@ -316,6 +316,14 @@ function getParam(name) {
 
 function startRetroArch(args)
 {
+  Module.raf = fn => {
+    if (currentSession) {
+      return currentSession.requestAnimationFrame(fn);
+    } else {
+      return requestAnimationFrame(fn);
+    }
+  };
+  
    $('.webplayer').show();
    $('.webplayer-preview').hide();
    document.getElementById("btnRun").disabled = true;
