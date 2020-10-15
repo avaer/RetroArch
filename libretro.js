@@ -43,7 +43,6 @@ renderer.setAnimationLoop(() => {
 let currentSession = null;
 const _initializeXr = () => {
   function onSessionStarted(session) {
-    console.log('session started', session);
     session.addEventListener('end', onSessionEnded);
     renderer.xr.setSession(session);
     // renderer.xr.setReferenceSpaceType('local-floor');
