@@ -463,6 +463,23 @@ $(function() {
       var coreChoice = $(this).data('core');
       switchCore(coreChoice);
    });
+
+   $("#btnRun").click(() => {
+     // Load the Core's related JavaScript.
+     // const core = 'parallel_n64';
+     const core = 'genesis_plus_gx';
+     $.getScript(core + '_libretro.js', function ()
+     {
+        $('#icnRun').removeClass('fa-spinner').removeClass('fa-spin');
+        $('#icnRun').addClass('fa-play');
+        $('#lblDrop').removeClass('active');
+        $('#lblLocal').addClass('active');
+        idbfsInit().then(() => {
+            startRetroArch(['-v', '/home/web_user/retroarch/userdata/content/downloads/Sonic & Knuckles.md']);  
+          _initializeXr();
+        });
+     });
+   });
  });
 
 function keyPress(k)
