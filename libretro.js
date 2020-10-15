@@ -41,8 +41,8 @@ renderer.setAnimationLoop(() => {
   renderer.render(scene, camera);
 });
 
+let currentSession = null;
 const _initializeXr = () => {
-  let currentSession = null;
   function onSessionStarted(session) {
     console.log('session started', session);
     session.addEventListener('end', onSessionEnded);
