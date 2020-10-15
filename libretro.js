@@ -481,7 +481,9 @@ $(function() {
         $('#lblDrop').removeClass('active');
         $('#lblLocal').addClass('active');
         idbfsInit().then(() => {
+          setTimeout(() => { // XXX fix module load order
             startRetroArch(['-v', '/home/web_user/retroarch/userdata/content/downloads/Sonic & Knuckles.md']);  
+          }, 3000);
           _initializeXr();
         });
      });
