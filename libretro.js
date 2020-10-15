@@ -1,5 +1,82 @@
 import * as THREE from './three.module.js';
 
+const renderer = new THREE.WebGLRenderer({
+  // canvas,
+  // context,
+  antialias: true,
+  // alpha: true,
+  // preserveDrawingBuffer: false,
+});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.autoClear = false;
+renderer.sortObjects = false;
+renderer.physicallyCorrectLights = true;
+renderer.xr.enabled = true;
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 1.6, 2);
+camera.rotation.order = 'YXZ';
+// camera.quaternion.set(0, 0, 0, 1);
+
+const mainMesh = (() => {
+  const geometry = new THREE.PlaneBufferGeometry(1, 1);
+  const texture = new THREE.Texture(document.getElementById('canvas'));
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+  return mesh;
+})();
+mainMesh.position.y = 1;
+scene.add(mainMesh);
+
+renderer.setAnimationLoop(() => {
+  mainMesh.material.map.needsUpdate = true;
+
+  renderer.render(scene, camera);
+});
+
+const _initializeXr = () => {
+  let currentSession = null;
+  function onSessionStarted(session) {
+    console.log('session started', session);
+    session.addEventListener('end', onSessionEnded);
+    renderer.xr.setSession(session);
+    // renderer.xr.setReferenceSpaceType('local-floor');
+    currentSession = session;
+    // setState({ isXR: true })
+  }
+  function onSessionEnded() {
+    currentSession.removeEventListener('end', onSessionEnded);
+    renderer.xr.setSession(null);
+    currentSession = null;
+    // setState({ isXR: false })
+  }
+  /* document.getElementById('enter-xr-button').addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation(); */
+    if (currentSession === null) {
+      navigator.xr.requestSession('immersive-vr', {
+        requiredFeatures: [
+          'local-floor',
+          // 'bounded-floor',
+        ],
+        optionalFeatures: [
+          'hand-tracking',
+        ],
+      }).then(onSessionStarted);
+    } else {
+      currentSession.end();
+    }
+  // });
+};
+// _initializeXr();
+
 /**
  * RetroArch Web Player
  *
@@ -148,6 +225,8 @@ function loadFiles(files) {
         )
       ).then(() => {
         startRetroArch(['-v', '/home/web_user/retroarch/userdata/content/' + mainFileName]);
+        
+        _initializeXr();
       });
    });
   } else {
