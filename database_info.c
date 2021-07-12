@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- *  Copyright (C) 2016-2017 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -29,7 +29,6 @@
 
 #include "core_info.h"
 #include "database_info.h"
-#include "verbosity.h"
 
 int database_info_build_query_enum(char *s, size_t len,
       enum database_query_type type,
@@ -38,8 +37,7 @@ int database_info_build_query_enum(char *s, size_t len,
    bool add_quotes = true;
    bool add_glob   = false;
 
-   string_add_bracket_open(s, len);
-   string_add_single_quote(s, len);
+   strcpy_literal(s, "{'");
 
    switch (type)
    {
@@ -51,7 +49,7 @@ int database_info_build_query_enum(char *s, size_t len,
          break;
       case DATABASE_QUERY_ENTRY_DEVELOPER:
          strlcat(s, "developer", len);
-         add_glob = true;
+         add_glob   = true;
          add_quotes = false;
          break;
       case DATABASE_QUERY_ENTRY_ORIGIN:
@@ -106,27 +104,21 @@ int database_info_build_query_enum(char *s, size_t len,
          add_quotes = false;
          break;
       case DATABASE_QUERY_NONE:
-         RARCH_LOG("Unknown type: %d\n", type);
          break;
    }
 
-   string_add_single_quote(s, len);
-   string_add_colon(s, len);
+   strlcat(s, "':", len);
    if (add_glob)
-      string_add_glob_open(s, len);
+      strlcat(s, "glob('*", len);
    if (add_quotes)
-      string_add_quote(s, len);
+      strlcat(s, "\"", len);
    strlcat(s, path, len);
    if (add_glob)
-      string_add_glob_close(s, len);
+      strlcat(s, "*')", len);
    if (add_quotes)
-      string_add_quote(s, len);
+      strlcat(s, "\"", len);
 
-   string_add_bracket_close(s, len);
-
-#if 0
-   RARCH_LOG("query: %s\n", s);
-#endif
+   strlcat(s, "}", len);
 
    return 0;
 }
@@ -147,7 +139,6 @@ char *bin_to_hex_alloc(const uint8_t *data, size_t len)
       snprintf(ret+i * 2, 3, "%02X", data[i]);
    return ret;
 }
-
 
 static int database_cursor_iterate(libretrodb_cursor_t *cur,
       database_info_t *db_info)
@@ -226,30 +217,40 @@ static int database_cursor_iterate(libretrodb_cursor_t *cur,
          if (!string_is_empty(val_string))
             db_info->franchise = strdup(val_string);
       }
-      else if (string_is_equal(str, "bbfc_rating"))
+      else if (string_ends_with_size(str, "_rating",
+               strlen(str), STRLEN_CONST("_rating")))
       {
-         if (!string_is_empty(val_string))
-            db_info->bbfc_rating = strdup(val_string);
-      }
-      else if (string_is_equal(str, "esrb_rating"))
-      {
-         if (!string_is_empty(val_string))
-            db_info->esrb_rating = strdup(val_string);
-      }
-      else if (string_is_equal(str, "elspa_rating"))
-      {
-         if (!string_is_empty(val_string))
-            db_info->elspa_rating = strdup(val_string);
-      }
-      else if (string_is_equal(str, "cero_rating"))
-      {
-         if (!string_is_empty(val_string))
-            db_info->cero_rating          = strdup(val_string);
-      }
-      else if (string_is_equal(str, "pegi_rating"))
-      {
-         if (!string_is_empty(val_string))
-            db_info->pegi_rating          = strdup(val_string);
+         if (string_is_equal(str, "bbfc_rating"))
+         {
+            if (!string_is_empty(val_string))
+               db_info->bbfc_rating = strdup(val_string);
+         }
+         else if (string_is_equal(str, "esrb_rating"))
+         {
+            if (!string_is_empty(val_string))
+               db_info->esrb_rating = strdup(val_string);
+         }
+         else if (string_is_equal(str, "elspa_rating"))
+         {
+            if (!string_is_empty(val_string))
+               db_info->elspa_rating = strdup(val_string);
+         }
+         else if (string_is_equal(str, "cero_rating"))
+         {
+            if (!string_is_empty(val_string))
+               db_info->cero_rating          = strdup(val_string);
+         }
+         else if (string_is_equal(str, "pegi_rating"))
+         {
+            if (!string_is_empty(val_string))
+               db_info->pegi_rating          = strdup(val_string);
+         }
+         else if (string_is_equal(str, "edge_rating"))
+            db_info->edge_magazine_rating    = (unsigned)val->val.uint_;
+         else if (string_is_equal(str, "famitsu_rating"))
+            db_info->famitsu_magazine_rating = (unsigned)val->val.uint_;
+         else if (string_is_equal(str, "tgdb_rating"))
+            db_info->tgdb_rating             = (unsigned)val->val.uint_;
       }
       else if (string_is_equal(str, "enhancement_hw"))
       {
@@ -261,14 +262,8 @@ static int database_cursor_iterate(libretrodb_cursor_t *cur,
          if (!string_is_empty(val_string))
             db_info->edge_magazine_review = strdup(val_string);
       }
-      else if (string_is_equal(str, "edge_rating"))
-         db_info->edge_magazine_rating    = (unsigned)val->val.uint_;
       else if (string_is_equal(str, "edge_issue"))
          db_info->edge_magazine_issue     = (unsigned)val->val.uint_;
-      else if (string_is_equal(str, "famitsu_rating"))
-         db_info->famitsu_magazine_rating = (unsigned)val->val.uint_;
-      else if (string_is_equal(str, "tgdb_rating"))
-         db_info->tgdb_rating             = (unsigned)val->val.uint_;
       else if (string_is_equal(str, "users"))
          db_info->max_users               = (unsigned)val->val.uint_;
       else if (string_is_equal(str, "releasemonth"))
@@ -292,10 +287,6 @@ static int database_cursor_iterate(libretrodb_cursor_t *cur,
       else if (string_is_equal(str, "md5"))
          db_info->md5 = bin_to_hex_alloc(
                (uint8_t*)val->val.binary.buff, val->val.binary.len);
-      else
-      {
-         RARCH_LOG("Unknown key: %s\n", str);
-      }
    }
 
    rmsgpack_dom_value_free(&item);
@@ -374,14 +365,14 @@ database_info_handle_t *database_info_dir_init(const char *dir,
    core_info_list_t *core_info_list = NULL;
    struct string_list       *list   = NULL;
    database_info_handle_t     *db   = (database_info_handle_t*)
-      calloc(1, sizeof(*db));
+      malloc(sizeof(*db));
 
    if (!db)
       return NULL;
 
    core_info_get_list(&core_info_list);
 
-   list = dir_list_new(dir, core_info_list->all_ext,
+   list = dir_list_new(dir, core_info_list ? core_info_list->all_ext : NULL,
          false, show_hidden_files,
          false, true);
 
@@ -393,10 +384,10 @@ database_info_handle_t *database_info_dir_init(const char *dir,
 
    dir_list_prioritize(list);
 
-   db->list           = list;
-   db->list_ptr       = 0;
-   db->status         = DATABASE_STATUS_ITERATE;
-   db->type           = type;
+   db->status             = DATABASE_STATUS_ITERATE;
+   db->type               = type;
+   db->list_ptr           = 0;
+   db->list               = list;
 
    return db;
 }
@@ -407,7 +398,7 @@ database_info_handle_t *database_info_file_init(const char *path,
    union string_list_elem_attr attr;
    struct string_list        *list  = NULL;
    database_info_handle_t      *db  = (database_info_handle_t*)
-      calloc(1, sizeof(*db));
+      malloc(sizeof(*db));
 
    if (!db)
       return NULL;
@@ -424,10 +415,10 @@ database_info_handle_t *database_info_file_init(const char *path,
 
    string_list_append(list, path, attr);
 
-   db->list_ptr       = 0;
-   db->list           = list;
-   db->status         = DATABASE_STATUS_ITERATE;
-   db->type           = type;
+   db->status             = DATABASE_STATUS_ITERATE;
+   db->type               = type;
+   db->list_ptr           = 0;
+   db->list               = list;
 
    return db;
 }
@@ -478,6 +469,40 @@ database_info_list_t *database_info_list_new(
 
          if (!new_ptr)
          {
+            if (db_info.bbfc_rating)
+               free(db_info.bbfc_rating);
+            if (db_info.cero_rating)
+               free(db_info.cero_rating);
+            if (db_info.description)
+               free(db_info.description);
+            if (db_info.edge_magazine_review)
+               free(db_info.edge_magazine_review);
+            if (db_info.elspa_rating)
+               free(db_info.elspa_rating);
+            if (db_info.enhancement_hw)
+               free(db_info.enhancement_hw);
+            if (db_info.esrb_rating)
+               free(db_info.esrb_rating);
+            if (db_info.franchise)
+               free(db_info.franchise);
+            if (db_info.genre)
+               free(db_info.genre);
+            if (db_info.name)
+               free(db_info.name);
+            if (db_info.origin)
+               free(db_info.origin);
+            if (db_info.pegi_rating)
+               free(db_info.pegi_rating);
+            if (db_info.publisher)
+               free(db_info.publisher);
+            if (db_info.rom_name)
+               free(db_info.rom_name);
+            if (db_info.serial)
+               free(db_info.serial);
+            if (db_info.md5)
+               free(db_info.md5);
+            if (db_info.sha1)
+               free(db_info.sha1);
             database_info_list_free(database_info_list);
             free(database_info);
             free(database_info_list);

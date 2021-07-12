@@ -29,16 +29,11 @@
 
 #if defined(MBEDTLS_SSL_TLS_C)
 
-#if defined(MBEDTLS_PLATFORM_C)
-#include "mbedtls/platform.h"
-#else
 #include <stdlib.h>
-#endif
+#include <string.h>
 
 #include "mbedtls/ssl_ciphersuites.h"
 #include "mbedtls/ssl.h"
-
-#include <string.h>
 
 /*
  * Ordered from most preferred to least preferred in terms of security.
@@ -1702,7 +1697,7 @@ const int *mbedtls_ssl_list_ciphersuites( void )
 #define MAX_CIPHERSUITES    sizeof( ciphersuite_definitions     ) /         \
                             sizeof( ciphersuite_definitions[0]  )
 static int supported_ciphersuites[MAX_CIPHERSUITES];
-static int supported_init = 0;
+static int ssl_ciphersuites_supported_init = 0;
 
 const int *mbedtls_ssl_list_ciphersuites( void )
 {
@@ -1710,7 +1705,7 @@ const int *mbedtls_ssl_list_ciphersuites( void )
      * On initial call filter out all ciphersuites not supported by current
      * build based on presence in the ciphersuite_definitions.
      */
-    if( supported_init == 0 )
+    if( ssl_ciphersuites_supported_init == 0 )
     {
         const int *p;
         int *q;
@@ -1730,7 +1725,7 @@ const int *mbedtls_ssl_list_ciphersuites( void )
         }
         *q = 0;
 
-        supported_init = 1;
+        ssl_ciphersuites_supported_init = 1;
     }
 
     return( supported_ciphersuites );

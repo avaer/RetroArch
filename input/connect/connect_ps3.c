@@ -27,11 +27,11 @@ struct hidpad_ps3_data
 {
    struct pad_connection* connection;
    hid_driver_t *driver;
-   uint8_t data[512];
    uint32_t slot;
    uint32_t buttons;
-   bool have_led;
    uint16_t motors[2];
+   uint8_t data[512];
+   bool have_led;
 };
 
 /*
@@ -136,12 +136,8 @@ static void hidpad_ps3_get_buttons(void *data, input_bits_t *state)
 	struct hidpad_ps3_data *device = (struct hidpad_ps3_data*)data;
 	if ( device )
 	{
-		/*copy first 16 bits - standard RetroPad controls*/
-		BITS_COPY16_PTR(state, device->buttons);
-
-		/*PS button?*/
-		if (device->buttons & 0x10000)
-			BIT256_SET_PTR(state, RARCH_MENU_TOGGLE);
+		/* copy 32 bits : needed for PS button? */
+		BITS_COPY32_PTR(state, device->buttons);
 	}
 	else
       BIT256_CLEAR_ALL_PTR(state);
@@ -158,7 +154,9 @@ static int16_t hidpad_ps3_get_axis(void *data, unsigned axis)
    val = device->data[7 + axis];
    val = (val << 8) - 0x8000;
 
-   return (abs(val) > 0x1000) ? val : 0;
+   if (abs(val) > 0x1000)
+      return val;
+   return 0;
 }
 
 static void hidpad_ps3_packet_handler(void *data,

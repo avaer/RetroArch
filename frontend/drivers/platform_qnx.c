@@ -98,8 +98,10 @@ static void frontend_qnx_get_environment_settings(int *argc, char *argv[],
          "info", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OVERLAY], data_path,
          "overlays", sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SHADERS], data_path,
-         "shaders", sizeof(g_defaults.dirs[DEFAULT_DIR_SHADERS]));
+#ifdef HAVE_VIDEO_LAYOUT
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT], data_path,
+         "layouts", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT]));
+#endif
 
    /* user data */
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CHEATS], user_path,
@@ -112,8 +114,6 @@ static void frontend_qnx_get_environment_settings(int *argc, char *argv[],
          "downloads", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_ASSETS]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER], user_path,
          "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_VIDEO_FILTER], user_path,
-         "filters/video", sizeof(g_defaults.dirs[DEFAULT_VIDEO_FILTER]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_PLAYLIST], user_path,
          "playlists", sizeof(g_defaults.dirs[DEFAULT_DIR_PLAYLIST]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_REMAP], user_path,
@@ -126,10 +126,10 @@ static void frontend_qnx_get_environment_settings(int *argc, char *argv[],
          "states", sizeof(g_defaults.dirs[DEFAULT_DIR_SAVESTATE]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SYSTEM], user_path,
          "system", sizeof(g_defaults.dirs[DEFAULT_DIR_SYSTEM]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_THUMBNAIL], user_path,
-         "thumbnails", sizeof(g_defaults.dirs[DEFAULT_DIR_THUMBNAIL]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_WALLPAPERS], user_path,
          "wallpapers", sizeof(g_defaults.dirs[DEFAULT_DIR_WALLPAPERS]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_LOGS], user_path,
+         "logs", sizeof(g_defaults.dirs[DEFAULT_DIR_LOGS]));
 
    /* tmp */
    strlcpy(g_defaults.dirs[DEFAULT_DIR_CACHE],
@@ -138,8 +138,8 @@ static void frontend_qnx_get_environment_settings(int *argc, char *argv[],
    /* history and main config */
    strlcpy(g_defaults.dirs[DEFAULT_DIR_CONTENT_HISTORY],
          user_path, sizeof(g_defaults.dirs[DEFAULT_DIR_CONTENT_HISTORY]));
-   fill_pathname_join(g_defaults.path.config, user_path,
-         file_path_str(FILE_PATH_MAIN_CONFIG), sizeof(g_defaults.path.config));
+   fill_pathname_join(g_defaults.path_config, user_path,
+         FILE_PATH_MAIN_CONFIG, sizeof(g_defaults.path_config));
 
    /* bundle copy */
    snprintf(data_assets_path,
@@ -170,7 +170,7 @@ static void frontend_qnx_get_environment_settings(int *argc, char *argv[],
    }
 
    /* set glui as default menu */
-   snprintf(g_defaults.settings.menu, sizeof(g_defaults.settings.menu), "glui");
+   snprintf(g_defaults.settings_menu, sizeof(g_defaults.settings_menu), "glui");
 }
 
 enum frontend_architecture frontend_qnx_get_architecture(void)
@@ -205,5 +205,9 @@ frontend_ctx_driver_t frontend_ctx_qnx = {
    NULL,                         /* watch_path_for_changes */
    NULL,                         /* check_for_path_changes */
    NULL,                         /* set_sustained_performance_mode */
+   NULL,                         /* get_cpu_model_name */
+   NULL,                         /* get_user_language */
+   NULL,                         /* is_narrator_running */
+   NULL,                         /* accessibility_speak */
    "qnx",
 };

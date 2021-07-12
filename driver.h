@@ -26,29 +26,6 @@
 
 RETRO_BEGIN_DECLS
 
-#define DRIVERS_CMD_ALL \
-      ( DRIVER_AUDIO_MASK \
-      | DRIVER_VIDEO_MASK \
-      | DRIVER_INPUT_MASK \
-      | DRIVER_CAMERA_MASK \
-      | DRIVER_LOCATION_MASK \
-      | DRIVER_MENU_MASK \
-      | DRIVERS_VIDEO_INPUT_MASK \
-      | DRIVER_WIFI_MASK \
-      | DRIVER_LED_MASK \
-      | DRIVER_MIDI_MASK )
-
-#define DRIVERS_CMD_ALL_BUT_MENU \
-      ( DRIVER_AUDIO_MASK \
-      | DRIVER_VIDEO_MASK \
-      | DRIVER_INPUT_MASK \
-      | DRIVER_CAMERA_MASK \
-      | DRIVER_LOCATION_MASK \
-      | DRIVERS_VIDEO_INPUT_MASK \
-      | DRIVER_WIFI_MASK \
-      | DRIVER_LED_MASK \
-      | DRIVER_MIDI_MASK )
-
 enum
 {
    DRIVER_AUDIO = 0,
@@ -58,6 +35,7 @@ enum
    DRIVER_LOCATION,
    DRIVER_MENU,
    DRIVERS_VIDEO_INPUT,
+   DRIVER_BLUETOOTH,
    DRIVER_WIFI,
    DRIVER_LED,
    DRIVER_MIDI
@@ -72,6 +50,7 @@ enum
    DRIVER_LOCATION_MASK     = 1 << DRIVER_LOCATION,
    DRIVER_MENU_MASK         = 1 << DRIVER_MENU,
    DRIVERS_VIDEO_INPUT_MASK = 1 << DRIVERS_VIDEO_INPUT,
+   DRIVER_BLUETOOTH_MASK    = 1 << DRIVER_BLUETOOTH,
    DRIVER_WIFI_MASK         = 1 << DRIVER_WIFI,
    DRIVER_LED_MASK          = 1 << DRIVER_LED,
    DRIVER_MIDI_MASK         = 1 << DRIVER_MIDI
@@ -80,24 +59,11 @@ enum
 enum driver_ctl_state
 {
    RARCH_DRIVER_CTL_NONE = 0,
-   RARCH_DRIVER_CTL_DEINIT,
-
-   /* Attempts to find a default driver for
-    * all driver types.
-    *
-    * Should be run before RARCH_DRIVER_CTL_INIT.
-    */
-   RARCH_DRIVER_CTL_INIT_PRE,
 
    /* Sets monitor refresh rate to new value by calling
     * video_monitor_set_refresh_rate(). Subsequently
     * calls audio_monitor_set_refresh_rate(). */
    RARCH_DRIVER_CTL_SET_REFRESH_RATE,
-
-   /* Update the system Audio/Video information.
-    * Will reinitialize audio/video drivers.
-    * Used by RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO. */
-   RARCH_DRIVER_CTL_UPDATE_SYSTEM_AV_INFO,
 
    RARCH_DRIVER_CTL_FIND_FIRST,
 
@@ -105,11 +71,7 @@ enum driver_ctl_state
 
    RARCH_DRIVER_CTL_FIND_PREV,
 
-   RARCH_DRIVER_CTL_FIND_NEXT,
-
-   /* Find index of the driver, based on @label. */
-   RARCH_DRIVER_CTL_FIND_INDEX
-
+   RARCH_DRIVER_CTL_FIND_NEXT
 };
 
 typedef struct driver_ctx_info
@@ -126,10 +88,6 @@ bool driver_ctl(enum driver_ctl_state state, void *data);
  * If nonblock state is false, sets blocking state for both
  * audio and video drivers instead. */
 void driver_set_nonblock_state(void);
-
-void driver_uninit(int flags);
-
-void drivers_init(int flags);
 
 RETRO_END_DECLS
 

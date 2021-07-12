@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/iosupport.h>
 
 #include <gccore.h>
 #include <ogcsys.h>
@@ -65,17 +66,6 @@ extern void system_exec_wii(const char *path, bool should_load_game);
 static enum frontend_fork gx_fork_mode = FRONTEND_FORK_NONE;
 #endif
 
-#ifndef IS_SALAMANDER
-#include "../../paths.h"
-
-enum
-{
-   GX_DEVICE_SD = 0,
-   GX_DEVICE_USB,
-   GX_DEVICE_END
-};
-
-#if defined(HAVE_LOGGER) || defined(HAVE_FILE_LOGGER)
 static devoptab_t dotab_stdout = {
    "stdout",   /* device name */
    0,          /* size of file structure */
@@ -101,7 +91,16 @@ static devoptab_t dotab_stdout = {
    NULL,       /* device fsync_r */
    NULL,       /* deviceData; */
 };
-#endif
+
+#ifndef IS_SALAMANDER
+#include "../../paths.h"
+
+enum
+{
+   GX_DEVICE_SD = 0,
+   GX_DEVICE_USB,
+   GX_DEVICE_END
+};
 
 #ifdef HW_RVL
 static struct
@@ -151,22 +150,6 @@ static void gx_devthread(void *a)
 }
 #endif
 
-#ifdef HAVE_LOGGER
-static int gx_logger_net(struct _reent *r, int fd, const char *ptr, size_t len)
-{
-#ifdef HAVE_LOGGER
-   static char temp[4000];
-   size_t l = (len >= 4000) ? 3999 : len - 1;
-   memcpy(temp, ptr, l);
-   temp[l] = 0;
-   logger_send("%s", temp);
-#elif defined(HAVE_FILE_LOGGER)
-   fwrite(ptr, 1, len, retro_main_log_file());
-#endif
-   return len;
-}
-#endif
-
 #endif
 
 #ifdef IS_SALAMANDER
@@ -180,15 +163,10 @@ static void frontend_gx_get_environment_settings(
    char *last_slash = NULL;
    char *device_end = NULL;
 #ifndef IS_SALAMANDER
-#if defined(HAVE_LOGGER)
-   logger_init();
-#elif defined(HAVE_FILE_LOGGER)
-   retro_main_log_file_init("/retroarch-log.txt");
-#endif
 
    /* This situation can happen on some loaders so we really need some
       fake args or else retroarch will just crash on parsing NULL pointers */
-   if(*argc == 0 || argv == NULL)
+   if(*argc == 0 || !argv)
    {
       struct rarch_main_wrap *args = (struct rarch_main_wrap*)params_data;
       if (args)
@@ -209,7 +187,21 @@ static void frontend_gx_get_environment_settings(
    chdir("carda:/retroarch");
 #endif
    getcwd(g_defaults.dirs[DEFAULT_DIR_CORE], PATH_MAX_LENGTH);
-
+#if defined(HW_RVL) && !defined(IS_SALAMANDER)
+   /* When using external loaders(Wiiflow etc.), getcwd doesn't return the path correctly and
+    * as a result the cfg file is not found. */
+   if (*argc > 2 && argv[1] != NULL && argv[2] != NULL)
+   {
+      if(gx_devices[GX_DEVICE_SD].mounted)
+      {
+         chdir("sd:/");
+      }
+      else if(gx_devices[GX_DEVICE_USB].mounted)
+      {
+         chdir("usb:/");
+      }
+   }
+#endif
    last_slash = strrchr(g_defaults.dirs[DEFAULT_DIR_CORE], '/');
    if (last_slash)
       *last_slash = 0;
@@ -222,23 +214,43 @@ static void frontend_gx_get_environment_settings(
       fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_PORT], g_defaults.dirs[DEFAULT_DIR_PORT],
             "retroarch", sizeof(g_defaults.dirs[DEFAULT_DIR_PORT]));
 
+   /* System paths */
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], g_defaults.dirs[DEFAULT_DIR_CORE],
          "info", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG],
-         g_defaults.dirs[DEFAULT_DIR_CORE], "autoconfig",
-         sizeof(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG], g_defaults.dirs[DEFAULT_DIR_CORE],
+         "autoconfig", sizeof(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OVERLAY], g_defaults.dirs[DEFAULT_DIR_CORE],
          "overlays", sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
-   fill_pathname_join(g_defaults.path.config, g_defaults.dirs[DEFAULT_DIR_PORT],
-         "retroarch.cfg", sizeof(g_defaults.path.config));
+#ifdef HAVE_VIDEO_LAYOUT
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT], g_defaults.dirs[DEFAULT_DIR_CORE],
+         "layouts", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT]));
+#endif
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER], g_defaults.dirs[DEFAULT_DIR_CORE],
+         "filters/video", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER], g_defaults.dirs[DEFAULT_DIR_CORE],
+         "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_ASSETS], g_defaults.dirs[DEFAULT_DIR_CORE],
+         "assets", sizeof(g_defaults.dirs[DEFAULT_DIR_ASSETS]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CHEATS], g_defaults.dirs[DEFAULT_DIR_CORE],
+         "cheats", sizeof(g_defaults.dirs[DEFAULT_DIR_CHEATS]));
+
+   /* User paths */
+   fill_pathname_join(g_defaults.path_config, g_defaults.dirs[DEFAULT_DIR_PORT],
+         "retroarch.cfg", sizeof(g_defaults.path_config));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SYSTEM], g_defaults.dirs[DEFAULT_DIR_PORT],
          "system", sizeof(g_defaults.dirs[DEFAULT_DIR_SYSTEM]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SRAM], g_defaults.dirs[DEFAULT_DIR_PORT],
          "savefiles", sizeof(g_defaults.dirs[DEFAULT_DIR_SRAM]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SAVESTATE], g_defaults.dirs[DEFAULT_DIR_PORT],
-         "savefiles", sizeof(g_defaults.dirs[DEFAULT_DIR_SAVESTATE]));
+         "savestates", sizeof(g_defaults.dirs[DEFAULT_DIR_SAVESTATE]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_PLAYLIST], g_defaults.dirs[DEFAULT_DIR_PORT],
          "playlists", sizeof(g_defaults.dirs[DEFAULT_DIR_PLAYLIST]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_LOGS], g_defaults.dirs[DEFAULT_DIR_PORT],
+         "logs", sizeof(g_defaults.dirs[DEFAULT_DIR_LOGS]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_REMAP], g_defaults.dirs[DEFAULT_DIR_PORT],
+         "remaps", sizeof(g_defaults.dirs[DEFAULT_DIR_REMAP]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_MENU_CONFIG], g_defaults.dirs[DEFAULT_DIR_PORT],
+         "config", sizeof(g_defaults.dirs[DEFAULT_DIR_MENU_CONFIG]));
 
 #ifdef IS_SALAMANDER
    if (*argc > 2 && argv[1] != NULL && argv[2] != NULL)
@@ -312,15 +324,8 @@ static void frontend_gx_init(void *data)
 
    fatInitDefault();
 
-#ifdef HAVE_LOGGER
    devoptab_list[STD_OUT] = &dotab_stdout;
    devoptab_list[STD_ERR] = &dotab_stdout;
-   dotab_stdout.write_r = gx_logger_net;
-#elif defined(HAVE_FILE_LOGGER) && !defined(IS_SALAMANDER)
-   devoptab_list[STD_OUT] = &dotab_stdout;
-   devoptab_list[STD_ERR] = &dotab_stdout;
-   dotab_stdout.write_r = gx_logger_file;
-#endif
 
 #if defined(HW_RVL) && !defined(IS_SALAMANDER)
    gx_devices[GX_DEVICE_SD].interface = &__io_wiisd;
@@ -361,7 +366,7 @@ static void frontend_gx_exec(const char *path, bool should_load_game)
 #endif
 }
 
-static void frontend_gx_exitspawn(char *s, size_t len)
+static void frontend_gx_exitspawn(char *s, size_t len, char *args)
 {
    bool should_load_game = false;
 #if defined(IS_SALAMANDER)
@@ -423,8 +428,8 @@ static void frontend_gx_process_args(int *argc, char *argv[])
    {
       char path[PATH_MAX_LENGTH] = {0};
       strlcpy(path, strrchr(argv[0], '/') + 1, sizeof(path));
-      if (filestream_exists(path))
-         rarch_ctl(RARCH_CTL_SET_LIBRETRO_PATH, path);
+      if (path_is_valid(path))
+         path_set(RARCH_PATH_CORE, path);
    }
 #endif
 }
@@ -476,7 +481,7 @@ static int frontend_gx_parse_drive_list(void *data, bool load_content)
    file_list_t *list = (file_list_t*)data;
    enum msg_hash_enums enum_idx = load_content ?
       MENU_ENUM_LABEL_FILE_DETECT_CORE_LIST_PUSH_DIR :
-      MSG_UNKNOWN;
+      MENU_ENUM_LABEL_FILE_BROWSER_DIRECTORY;
 #ifdef HW_RVL
    menu_entries_append_enum(list,
          "sd:/",
@@ -520,11 +525,11 @@ static uint64_t frontend_gx_get_mem_total(void)
    return total;
 }
 
-static uint64_t frontend_gx_get_mem_used(void)
+static uint64_t frontend_gx_get_mem_free(void)
 {
-   uint64_t total = SYSMEM1_SIZE - SYS_GetArena1Size();
+   uint64_t total = SYSMEM1_SIZE - (SYSMEM1_SIZE - SYS_GetArena1Size());
 #if defined(HW_RVL) && !defined(IS_SALAMANDER)
-   total += gx_mem2_used();
+   total += (gx_mem2_total() - gx_mem2_used());
 #endif
    return total;
 }
@@ -550,7 +555,7 @@ frontend_ctx_driver_t frontend_ctx_gx = {
    NULL,                            /* get_powerstate */
    frontend_gx_parse_drive_list,
    frontend_gx_get_mem_total,
-   frontend_gx_get_mem_used,
+   frontend_gx_get_mem_free,
    NULL,                            /* install_signal_handler */
    NULL,                            /* get_sighandler_state */
    NULL,                            /* set_sighandler_state */
@@ -560,5 +565,9 @@ frontend_ctx_driver_t frontend_ctx_gx = {
    NULL,                            /* watch_path_for_changes */
    NULL,                            /* check_for_path_changes */
    NULL,                            /* set_sustained_performance_mode */
+   NULL,                            /* get_cpu_model_name */
+   NULL,                            /* get_user_language */
+   NULL,                         /* is_narrator_running */
+   NULL,                         /* accessibility_speak */
    "gx",
 };

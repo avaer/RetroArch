@@ -28,14 +28,17 @@
 #include "../../config.h"
 #endif
 
-#ifdef HAVE_OPENGL
+#if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES)
 #include <gfx/gl_capabilities.h>
 #include "../common/gl_common.h"
 #endif
 
 #include "shader_glsl.h"
+#ifdef HAVE_REWIND
 #include "../../managers/state_manager.h"
+#endif
 #include "../../core.h"
+#include "../../verbosity.h"
 
 #define PREV_TEXTURES (GFX_MAX_TEXTURES - 1)
 
@@ -64,8 +67,6 @@ struct glsl_attrib
    GLsizei size;
    GLsizei offset;
 };
-
-static gfx_ctx_proc_t (*glsl_get_proc_address)(const char*);
 
 struct shader_uniforms_frame
 {
@@ -99,7 +100,6 @@ struct shader_uniforms
    struct shader_uniforms_frame prev[PREV_TEXTURES];
 };
 
-
 static const char *glsl_prefixes[] = {
    "",
    "ruby",
@@ -117,12 +117,18 @@ static const char *glsl_prefixes[] = {
 #include "../drivers/gl_shaders/core_alpha_blend.glsl.frag.h"
 
 #ifdef HAVE_SHADERPIPELINE
+#include "../drivers/gl_shaders/core_pipeline_snow.glsl.frag.h"
+#include "../drivers/gl_shaders/core_pipeline_snow_simple.glsl.frag.h"
 #include "../drivers/gl_shaders/core_pipeline_xmb_ribbon.glsl.frag.h"
+#include "../drivers/gl_shaders/core_pipeline_xmb_ribbon_simple.glsl.frag.h"
+#include "../drivers/gl_shaders/core_pipeline_bokeh.glsl.frag.h"
+#include "../drivers/gl_shaders/core_pipeline_snowflake.glsl.frag.h"
 #include "../drivers/gl_shaders/legacy_pipeline_xmb_ribbon_simple.glsl.vert.h"
 #include "../drivers/gl_shaders/modern_pipeline_xmb_ribbon_simple.glsl.vert.h"
-#include "../drivers/gl_shaders/modern_pipeline_snow.glsl.vert.h"
 #include "../drivers/gl_shaders/pipeline_xmb_ribbon_simple.glsl.frag.h"
 #include "../drivers/gl_shaders/pipeline_snow.glsl.frag.h"
+#include "../drivers/gl_shaders/pipeline_snow.glsl.vert.h"
+#include "../drivers/gl_shaders/pipeline_snow_core.glsl.vert.h"
 #include "../drivers/gl_shaders/pipeline_snow_simple.glsl.frag.h"
 #include "../drivers/gl_shaders/legacy_pipeline_snow.glsl.vert.h"
 #include "../drivers/gl_shaders/legacy_pipeline_xmb_ribbon.glsl.vert.h"
@@ -146,78 +152,12 @@ typedef struct glsl_shader_data
    struct cache_vbo vbo[GFX_MAX_SHADERS];
    struct shader_program_glsl_data prg[GFX_MAX_SHADERS];
    struct video_shader *shader;
-   state_tracker_t *state_tracker;
 } glsl_shader_data_t;
 
+/* TODO/FIXME - static globals */
 static bool glsl_core;
 static unsigned glsl_major;
 static unsigned glsl_minor;
-
-static bool gl_glsl_add_lut(
-      const struct video_shader *shader,
-      unsigned i, void *textures_data)
-{
-   struct texture_image img;
-   GLuint *textures_lut                 = (GLuint*)textures_data;
-   enum texture_filter_type filter_type = TEXTURE_FILTER_LINEAR;
-
-   img.width         = 0;
-   img.height        = 0;
-   img.pixels        = NULL;
-   img.supports_rgba = video_driver_supports_rgba();
-
-   if (!image_texture_load(&img, shader->lut[i].path))
-   {
-      RARCH_ERR("[GL]: Failed to load texture image from: \"%s\"\n",
-            shader->lut[i].path);
-      return false;
-   }
-
-   RARCH_LOG("[GL]: Loaded texture image from: \"%s\" ...\n",
-         shader->lut[i].path);
-
-   if (shader->lut[i].filter == RARCH_FILTER_NEAREST)
-      filter_type = TEXTURE_FILTER_NEAREST;
-
-   if (shader->lut[i].mipmap)
-   {
-      if (filter_type == TEXTURE_FILTER_NEAREST)
-         filter_type = TEXTURE_FILTER_MIPMAP_NEAREST;
-      else
-         filter_type = TEXTURE_FILTER_MIPMAP_LINEAR;
-   }
-
-   gl_load_texture_data(textures_lut[i],
-         shader->lut[i].wrap,
-         filter_type, 4,
-         img.width, img.height,
-         img.pixels, sizeof(uint32_t));
-   image_texture_free(&img);
-
-   return true;
-}
-
-static bool gl_glsl_load_luts(
-      const struct video_shader *shader,
-      GLuint *textures_lut)
-{
-   unsigned i;
-   unsigned num_luts = MIN(shader->luts, GFX_MAX_TEXTURES);
-
-   if (!shader->luts)
-      return true;
-
-   glGenTextures(num_luts, textures_lut);
-
-   for (i = 0; i < num_luts; i++)
-   {
-      if (!gl_glsl_add_lut(shader, i, textures_lut))
-         return false;
-   }
-
-   glBindTexture(GL_TEXTURE_2D, 0);
-   return true;
-}
 
 static GLint gl_glsl_get_uniform(glsl_shader_data_t *glsl,
       GLuint prog, const char *base)
@@ -228,14 +168,17 @@ static GLint gl_glsl_get_uniform(glsl_shader_data_t *glsl,
 
    buf[0] = '\0';
 
-   snprintf(buf, sizeof(buf), "%s%s", glsl->shader->prefix, base);
+   strlcpy(buf, glsl->shader->prefix, sizeof(buf));
+   strlcat(buf, base, sizeof(buf));
    loc = glGetUniformLocation(prog, buf);
    if (loc >= 0)
       return loc;
 
    for (i = 0; i < ARRAY_SIZE(glsl_prefixes); i++)
    {
-      snprintf(buf, sizeof(buf), "%s%s", glsl_prefixes[i], base);
+      buf[0] = '\0';
+      strlcpy(buf, glsl_prefixes[i], sizeof(buf));
+      strlcat(buf, base, sizeof(buf));
       loc = glGetUniformLocation(prog, buf);
       if (loc >= 0)
          return loc;
@@ -253,14 +196,16 @@ static GLint gl_glsl_get_attrib(glsl_shader_data_t *glsl,
 
    buf[0] = '\0';
 
-   snprintf(buf, sizeof(buf), "%s%s", glsl->shader->prefix, base);
+   strlcpy(buf, glsl->shader->prefix, sizeof(buf));
+   strlcat(buf, base, sizeof(buf));
    loc = glGetUniformLocation(prog, buf);
    if (loc >= 0)
       return loc;
 
    for (i = 0; i < ARRAY_SIZE(glsl_prefixes); i++)
    {
-      snprintf(buf, sizeof(buf), "%s%s", glsl_prefixes[i], base);
+      strlcpy(buf, glsl_prefixes[i], sizeof(buf));
+      strlcat(buf, base, sizeof(buf));
       loc = glGetAttribLocation(prog, buf);
       if (loc >= 0)
          return loc;
@@ -395,7 +340,6 @@ static bool gl_glsl_link_program(GLuint prog)
    return true;
 }
 
-
 static bool gl_glsl_compile_program(
       void *data,
       unsigned idx,
@@ -474,11 +418,11 @@ error:
    return false;
 }
 
-static void gl_glsl_strip_parameter_pragmas(char *source)
+static void gl_glsl_strip_parameter_pragmas(char *source, const char *str)
 {
    /* #pragma parameter lines tend to have " characters in them,
     * which is not legal GLSL. */
-   char *s = strstr(source, "#pragma parameter");
+   char *s = strstr(source, str);
 
    while (s)
    {
@@ -486,7 +430,7 @@ static void gl_glsl_strip_parameter_pragmas(char *source)
        * so we can just replace the entire line with spaces. */
       while (*s != '\0' && *s != '\n')
          *s++ = ' ';
-      s = strstr(s, "#pragma parameter");
+      s = strstr(s, str);
    }
 }
 
@@ -500,7 +444,7 @@ static bool gl_glsl_load_source_path(struct video_shader_pass *pass,
    if (nitems <= 0 || len <= 0)
       return false;
 
-   gl_glsl_strip_parameter_pragmas(pass->source.string.vertex);
+   gl_glsl_strip_parameter_pragmas(pass->source.string.vertex, "#pragma parameter");
    pass->source.string.fragment = strdup(pass->source.string.vertex);
    return pass->source.string.fragment && pass->source.string.vertex;
 }
@@ -521,9 +465,8 @@ static bool gl_glsl_compile_programs(
       if (!pass)
          continue;
 
-      /* If we load from GLSLP (CGP),
-       * load the file here, and pretend
-       * we were really using XML all along.
+      /* If we load from GLSLP (preset),
+       * load the file here.
        */
       if (     !string_is_empty(pass->source.path)
             && !gl_glsl_load_source_path(pass, pass->source.path))
@@ -532,8 +475,6 @@ static bool gl_glsl_compile_programs(
                pass->source.path);
          return false;
       }
-
-      *pass->source.path        = '\0';
 
       vertex                    = pass->source.string.vertex;
       fragment                  = pass->source.string.fragment;
@@ -634,10 +575,14 @@ static void gl_glsl_find_uniforms_frame(glsl_shader_data_t *glsl,
 
    texture[0] = texture_size[0] = input_size[0] = tex_coord[0] = '\0';
 
-   snprintf(texture,      sizeof(texture),      "%s%s", base, "Texture");
-   snprintf(texture_size, sizeof(texture_size), "%s%s", base, "TextureSize");
-   snprintf(input_size,   sizeof(input_size),   "%s%s", base, "InputSize");
-   snprintf(tex_coord,    sizeof(tex_coord),    "%s%s", base, "TexCoord");
+   strlcpy(texture,      base,          sizeof(texture));
+   strlcat(texture,      "Texture",     sizeof(texture));
+   strlcpy(texture_size, base,          sizeof(texture_size));
+   strlcat(texture_size, "TextureSize", sizeof(texture_size));
+   strlcpy(input_size,   base,          sizeof(input_size));
+   strlcat(input_size,   "InputSize",   sizeof(input_size));
+   strlcpy(tex_coord,    base,          sizeof(tex_coord));
+   strlcat(tex_coord,    "TexCoord",    sizeof(tex_coord));
 
    if (frame->texture < 0)
       frame->texture = gl_glsl_get_uniform(glsl, prog, texture);
@@ -724,7 +669,6 @@ static void gl_glsl_deinit_shader(glsl_shader_data_t *glsl)
       free(glsl->shader->pass[i].source.string.fragment);
    }
 
-   free(glsl->shader->script);
    free(glsl->shader);
    glsl->shader = NULL;
 }
@@ -748,6 +692,7 @@ static void gl_glsl_destroy_resources(glsl_shader_data_t *glsl)
          continue;
 
       glDeleteProgram(glsl->prg[i].id);
+      glsl->prg[i].id = 0;
    }
 
    if (glsl->shader && glsl->shader->luts)
@@ -758,10 +703,6 @@ static void gl_glsl_destroy_resources(glsl_shader_data_t *glsl)
    glsl->active_idx = 0;
 
    gl_glsl_deinit_shader(glsl);
-
-   if (glsl->state_tracker)
-      state_tracker_free(glsl->state_tracker);
-   glsl->state_tracker = NULL;
 
    gl_glsl_reset_attrib(glsl);
 
@@ -816,6 +757,7 @@ static void gl_glsl_init_menu_shaders(void *data)
 #endif
    shader_prog_info.is_file = false;
 
+   RARCH_LOG("[GLSL]: Compiling ribbon shader..\n");
    gl_glsl_compile_program(
          glsl,
          VIDEO_SHADER_MENU,
@@ -825,8 +767,9 @@ static void gl_glsl_init_menu_shaders(void *data)
          &glsl->uniforms[VIDEO_SHADER_MENU]);
 
    shader_prog_info.vertex = glsl_core ? stock_vertex_xmb_simple_modern : stock_vertex_xmb_ribbon_simple_legacy;
-   shader_prog_info.fragment = stock_fragment_xmb_ribbon_simple;
+   shader_prog_info.fragment = glsl_core ? stock_fragment_xmb_ribbon_simple_core : stock_fragment_xmb_ribbon_simple;
 
+   RARCH_LOG("[GLSL]: Compiling simple ribbon shader..\n");
    gl_glsl_compile_program(
          glsl,
          VIDEO_SHADER_MENU_2,
@@ -836,12 +779,14 @@ static void gl_glsl_init_menu_shaders(void *data)
          &glsl->uniforms[VIDEO_SHADER_MENU_2]);
 
 #if defined(HAVE_OPENGLES)
-   shader_prog_info.vertex = stock_vertex_xmb_snow_modern;
-#else
-   shader_prog_info.vertex = glsl_core ? stock_vertex_xmb_snow_modern : stock_vertex_xmb_snow_legacy;
-#endif
+   shader_prog_info.vertex   = stock_vertex_xmb_snow;
    shader_prog_info.fragment = stock_fragment_xmb_simple_snow;
+#else
+   shader_prog_info.vertex   = glsl_core ? stock_vertex_xmb_snow_core : stock_vertex_xmb_snow_legacy;
+   shader_prog_info.fragment = glsl_core ? stock_fragment_xmb_simple_snow_core : stock_fragment_xmb_simple_snow;
+#endif
 
+   RARCH_LOG("[GLSL]: Compiling snow shader..\n");
    gl_glsl_compile_program(
          glsl,
          VIDEO_SHADER_MENU_3,
@@ -851,12 +796,14 @@ static void gl_glsl_init_menu_shaders(void *data)
          &glsl->uniforms[VIDEO_SHADER_MENU_3]);
 
 #if defined(HAVE_OPENGLES)
-   shader_prog_info.vertex = stock_vertex_xmb_snow_modern;
-#else
-   shader_prog_info.vertex = glsl_core ? stock_vertex_xmb_snow_modern : stock_vertex_xmb_snow_legacy;
-#endif
+   shader_prog_info.vertex   = stock_vertex_xmb_snow;
    shader_prog_info.fragment = stock_fragment_xmb_snow;
+#else
+   shader_prog_info.vertex   = glsl_core ? stock_vertex_xmb_snow_core : stock_vertex_xmb_snow_legacy;
+   shader_prog_info.fragment = glsl_core ? stock_fragment_xmb_snow_core : stock_fragment_xmb_snow;
+#endif
 
+   RARCH_LOG("[GLSL]: Compiling modern snow shader..\n");
    gl_glsl_compile_program(
          glsl,
          VIDEO_SHADER_MENU_4,
@@ -866,12 +813,14 @@ static void gl_glsl_init_menu_shaders(void *data)
          &glsl->uniforms[VIDEO_SHADER_MENU_4]);
 
 #if defined(HAVE_OPENGLES)
-   shader_prog_info.vertex = stock_vertex_xmb_snow_modern;
-#else
-   shader_prog_info.vertex = glsl_core ? stock_vertex_xmb_snow_modern : stock_vertex_xmb_snow_legacy;
-#endif
+   shader_prog_info.vertex   = stock_vertex_xmb_snow;
    shader_prog_info.fragment = stock_fragment_xmb_bokeh;
+#else
+   shader_prog_info.vertex   = glsl_core ? stock_vertex_xmb_snow_core  : stock_vertex_xmb_snow_legacy;
+   shader_prog_info.fragment = glsl_core ? stock_fragment_xmb_bokeh_core : stock_fragment_xmb_bokeh;
+#endif
 
+   RARCH_LOG("[GLSL]: Compiling bokeh shader..\n");
    gl_glsl_compile_program(
          glsl,
          VIDEO_SHADER_MENU_5,
@@ -881,12 +830,14 @@ static void gl_glsl_init_menu_shaders(void *data)
          &glsl->uniforms[VIDEO_SHADER_MENU_5]);
 
 #if defined(HAVE_OPENGLES)
-   shader_prog_info.vertex = stock_vertex_xmb_snow_modern;
-#else
-   shader_prog_info.vertex = glsl_core ? stock_vertex_xmb_snow_modern : stock_vertex_xmb_snow_legacy;
-#endif
+   shader_prog_info.vertex   = stock_vertex_xmb_snow;
    shader_prog_info.fragment = stock_fragment_xmb_snowflake;
+#else
+   shader_prog_info.vertex   = glsl_core ? stock_vertex_xmb_snow_core : stock_vertex_xmb_snow_legacy;
+   shader_prog_info.fragment = glsl_core ? stock_fragment_xmb_snowflake_core : stock_fragment_xmb_snowflake;
+#endif
 
+   RARCH_LOG("[GLSL]: Compiling snowflake shader..\n");
    gl_glsl_compile_program(
          glsl,
          VIDEO_SHADER_MENU_6,
@@ -942,48 +893,57 @@ static void *gl_glsl_init(void *data, const char *path)
    if (!glsl->shader)
       goto error;
 
-   if (!string_is_empty(path))
    {
-      bool ret             = false;
-      const char *path_ext = path_get_extension(path);
+      bool is_preset;
+      enum rarch_shader_type type =
+         video_shader_get_type_from_ext(path_get_extension(path), &is_preset);
 
-      if (string_is_equal(path_ext, "glslp"))
+      if (!string_is_empty(path) && type != RARCH_SHADER_GLSL)
       {
-         conf = config_file_new(path);
-         if (conf)
+         RARCH_ERR("[GL]: Invalid shader type, falling back to stock.\n");
+         path = NULL;
+      }
+
+      if (!string_is_empty(path))
+      {
+         bool ret = false;
+
+         if (is_preset)
          {
-            ret = video_shader_read_conf_cgp(conf, glsl->shader);
+            conf = video_shader_read_preset(path);
+            if (conf)
+            {
+               ret = video_shader_read_conf_preset(conf, glsl->shader);
+               glsl->shader->modern = true;
+            }
+         }
+         else
+         {
+            strlcpy(glsl->shader->pass[0].source.path, path,
+                  sizeof(glsl->shader->pass[0].source.path));
+            glsl->shader->passes = 1;
             glsl->shader->modern = true;
+            ret = true;
+         }
+
+         if (!ret)
+         {
+            RARCH_ERR("[GL]: Failed to parse GLSL shader.\n");
+            goto error;
          }
       }
-      else if (string_is_equal(path_ext, "glsl"))
+      else
       {
-         strlcpy(glsl->shader->pass[0].source.path, path,
-               sizeof(glsl->shader->pass[0].source.path));
+         RARCH_WARN("[GL]: Stock GLSL shaders will be used.\n");
          glsl->shader->passes = 1;
+         glsl->shader->pass[0].source.string.vertex   =
+            strdup(glsl_core ? stock_vertex_core : stock_vertex_modern);
+         glsl->shader->pass[0].source.string.fragment =
+            strdup(glsl_core ? stock_fragment_core : stock_fragment_modern);
          glsl->shader->modern = true;
-         ret = true;
-      }
-
-      if (!ret)
-      {
-         RARCH_ERR("[GL]: Failed to parse GLSL shader.\n");
-         goto error;
       }
    }
-   else
-   {
-      RARCH_WARN("[GL]: Stock GLSL shaders will be used.\n");
-      glsl->shader->passes = 1;
-      glsl->shader->pass[0].source.string.vertex   =
-         strdup(glsl_core ? stock_vertex_core : stock_vertex_modern);
-      glsl->shader->pass[0].source.string.fragment =
-         strdup(glsl_core ? stock_fragment_core : stock_fragment_modern);
-      glsl->shader->modern = true;
-   }
 
-   if (!string_is_empty(path))
-      video_shader_resolve_relative(glsl->shader, path);
    video_shader_resolve_parameters(conf, glsl->shader);
 
    if (conf)
@@ -1047,7 +1007,7 @@ static void *gl_glsl_init(void *data, const char *path)
    if (!gl_glsl_compile_programs(glsl, &glsl->prg[1]))
       goto error;
 
-   if (!gl_glsl_load_luts(glsl->shader, glsl->lut_textures))
+   if (!gl_load_luts(glsl->shader, glsl->lut_textures))
    {
       RARCH_ERR("[GL]: Failed to load LUTs.\n");
       goto error;
@@ -1064,34 +1024,6 @@ static void *gl_glsl_init(void *data, const char *path)
       RARCH_WARN("Detected GL error in GLSL.\n");
    }
 #endif
-
-   if (glsl->shader->variables)
-   {
-      retro_ctx_memory_info_t mem_info;
-      struct state_tracker_info info;
-
-      mem_info.id         = RETRO_MEMORY_SYSTEM_RAM;
-
-      core_get_memory(&mem_info);
-
-      info.wram           = (uint8_t*)mem_info.data;
-      info.info           = glsl->shader->variable;
-      info.info_elem      = glsl->shader->variables;
-
-      info.script         = NULL;
-      info.script_class   = NULL;
-#ifdef HAVE_PYTHON
-      info.script         = glsl->shader->script;
-      if (*glsl->shader->script_class)
-         info.script_class= glsl->shader->script_class;
-#endif
-      info.script_is_file = false;
-
-      glsl->state_tracker = state_tracker_init(&info);
-
-      if (!glsl->state_tracker)
-         RARCH_WARN("Failed to init state tracker.\n");
-   }
 
    glsl->prg[glsl->shader->passes  + 1]     = glsl->prg[0];
    glsl->uniforms[glsl->shader->passes + 1] = glsl->uniforms[0];
@@ -1260,7 +1192,14 @@ static void gl_glsl_set_params(void *dat, void *shader_data)
    }
 
    if (uni->frame_direction >= 0)
-      glUniform1i(uni->frame_direction, state_manager_frame_is_reversed() ? -1 : 1);
+   {
+#ifdef HAVE_REWIND
+      if (state_manager_frame_is_reversed())
+         glUniform1i(uni->frame_direction, -1);
+      else
+#endif
+         glUniform1i(uni->frame_direction, 1);
+   }
 
    /* Set lookup textures. */
    for (i = 0; i < glsl->shader->luts; i++)
@@ -1398,7 +1337,6 @@ static void gl_glsl_set_params(void *dat, void *shader_data)
          texunit++;
       }
 
-
       if (uni->prev[i].texture_size >= 0)
          glUniform2fv(uni->prev[i].texture_size, 1, prev_info[i].tex_size);
 
@@ -1443,33 +1381,12 @@ static void gl_glsl_set_params(void *dat, void *shader_data)
             glsl->shader->parameters[i].id);
       glUniform1f(location, glsl->shader->parameters[i].current);
    }
-
-   /* Set state parameters. */
-   if (glsl->state_tracker)
-   {
-      static struct state_tracker_uniform state_info[GFX_MAX_VARIABLES];
-      static unsigned cnt = 0;
-
-      if (glsl->active_idx == 1)
-         cnt = state_tracker_get_uniform(glsl->state_tracker, state_info,
-               GFX_MAX_VARIABLES, frame_count);
-
-      for (i = 0; i < cnt; i++)
-      {
-         int location = glGetUniformLocation(
-               glsl->prg[glsl->active_idx].id,
-               state_info[i].id);
-         glUniform1f(location, state_info[i].value);
-      }
-   }
 }
 
-static bool gl_glsl_set_mvp(void *data, void *shader_data, const void *mat_data)
+static bool gl_glsl_set_mvp(void *shader_data, const void *mat_data)
 {
    int loc;
    glsl_shader_data_t *glsl   = (glsl_shader_data_t*)shader_data;
-
-   (void)data;
 
    if (!glsl || !glsl->shader->modern)
       return false;
@@ -1502,7 +1419,7 @@ static bool gl_glsl_set_mvp(void *data, void *shader_data, const void *mat_data)
       buffer[y + size]  = coord2[y]; \
    size                += multiplier * coords->vertices; \
 
-static bool gl_glsl_set_coords(void *handle_data, void *shader_data,
+static bool gl_glsl_set_coords(void *shader_data,
       const struct video_coords *coords)
 {
    GLfloat short_buffer[4 * (2 + 2 + 4 + 2)];
@@ -1534,10 +1451,10 @@ static bool gl_glsl_set_coords(void *handle_data, void *shader_data,
       elems        *= coords->vertices * sizeof(GLfloat);
 
       buffer        = (GLfloat*)malloc(elems);
-   }
 
-   if (!buffer)
-      return false;
+      if (!buffer)
+         return false;
+   }
 
    if (uni->tex_coord >= 0)
    {
@@ -1682,18 +1599,19 @@ static struct video_shader *gl_glsl_get_current_shader(void *data)
    return glsl->shader;
 }
 
-void gl_glsl_set_get_proc_address(gfx_ctx_proc_t (*proc)(const char*))
+static void gl_glsl_get_flags(uint32_t *flags)
 {
-   glsl_get_proc_address = proc;
+   BIT32_SET(*flags, GFX_CTX_FLAGS_SHADERS_GLSL);
 }
 
 void gl_glsl_set_context_type(bool core_profile,
       unsigned major, unsigned minor)
 {
-   glsl_core = core_profile;
+   glsl_core  = core_profile;
    glsl_major = major;
    glsl_minor = minor;
 }
+
 
 const shader_backend_t gl_glsl_backend = {
    gl_glsl_init,
@@ -1713,6 +1631,7 @@ const shader_backend_t gl_glsl_backend = {
    gl_glsl_get_feedback_pass,
    gl_glsl_mipmap_input,
    gl_glsl_get_current_shader,
+   gl_glsl_get_flags,
 
    RARCH_SHADER_GLSL,
    "glsl"

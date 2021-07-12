@@ -21,6 +21,7 @@
 #include <boolean.h>
 #include <retro_environment.h>
 #include <retro_miscellaneous.h>
+#include <retro_endianness.h>
 
 #include "joypad_connection.h"
 #include "../input_defines.h"
@@ -89,6 +90,8 @@ struct ps4buttons
 #endif
 }__attribute__((packed));
 
+/* NOTE: This needs to be aligned
+ * exactly like this, don't change this */
 struct ps4
 {
    uint8_t hatvalue[4];
@@ -100,10 +103,10 @@ struct hidpad_ps4_data
 {
    struct pad_connection* connection;
    hid_driver_t *driver;
-   struct ps4 data;
    uint32_t slot;
-   bool have_led;
    uint16_t motors[2];
+   struct ps4 data;     /* uint8_t alignment */
+   bool have_led;
 };
 
 static void hidpad_ps4_send_control(struct hidpad_ps4_data* device)

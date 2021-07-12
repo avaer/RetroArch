@@ -12,7 +12,7 @@ INTERNAL_LIBLAME       = 0
 INTERNAL_LIBFAAC       = 0
 INTERNAL_LIBSPEEX      = 0
 INTERNAL_LIBTHEORA     = 0
-INTERNAL_LIBOPUS       = 0  
+INTERNAL_LIBOPUS       = 0
 INTERNAL_LIBVORBIS     = 0
 INTERNAL_WEBP          = 0
 INTERNAL_ZLIB          = 0
@@ -75,6 +75,11 @@ endif
 
 TARGET_NAME := ffmpeg
 
+GIT_VERSION ?= " $(shell git rev-parse --short HEAD || echo unknown)"
+ifneq ($(GIT_VERSION)," unknown")
+       CFLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
+endif
+
 ifneq (,$(findstring unix,$(platform)))
 	ARCH_X86 = 1
    TARGET := $(TARGET_NAME)_libretro.so
@@ -123,7 +128,7 @@ else ifneq (,$(findstring ios,$(platform)))
    TARGET := $(TARGET_NAME)_libretro_ios.dylib
    fpic := -fPIC
    SHARED := -dynamiclib
-   CFLAGS += -I. -I.. -DHAVE_FMINF -DIOS
+   CFLAGS += -I. -I.. -DHAVE_FMINF -DIOS -DHAVE_UNISTD_H
 ifeq ($(OPENGL),1)
 	HAVE_OPENGL = 1
 	GLES = 1
@@ -140,11 +145,16 @@ ifeq ($(IOSSDK),)
   IOSSDK := $(shell xcodebuild -version -sdk iphoneos Path)
 endif
 
+ifeq ($(platform),ios-arm64)
+   CC = cc -arch arm64 -isysroot $(IOSSDK)
+   CXX  = c++ -arch arm64 -isysroot $(IOSSDK)
+else
    CC = cc -arch armv7 -isysroot $(IOSSDK)
    CXX  = c++ -arch armv7 -isysroot $(IOSSDK)
    LD = armv7-apple-darwin11-ld
+endif
 
-ifeq ($(platform),ios9)
+ifeq ($(platform),$(filter $(platform),ios9 ios-arm64))
    CC += -miphoneos-version-min=8.0
    CFLAGS += -miphoneos-version-min=8.0
 else
@@ -177,25 +187,28 @@ else ifeq ($(platform), emscripten)
 else
 
 	ARCH_X86 = 1
-   CC = gcc
-	CXX = g++
    TARGET := $(TARGET_NAME)_libretro.dll
    SHARED := -shared -static-libgcc -static-libstdc++ -s -Wl,--version-script=link.T -Wl,--no-undefined
    CFLAGS += -Iffmpeg
 ifeq ($(OPENGL),1)
    GL_LIB := -lopengl32
    CFLAGS += -DHAVE_OPENGL
+	HAVE_OPENGL = 1
 	HAVE_GL_FFT := 1
 	WIN32_PLATFORM := 1
 endif
    LIBS += -L.
 endif
 
+ifeq ($(LIBRETRO_SWITCH), 1)
+   CFLAGS += -DUPSTREAM_VERSION=\"$(shell cat ../RELEASE)\"
+endif
+
 CFLAGS += -D__LIBRETRO__
 
 include Makefile.common
 
-CFLAGS   += $(DEFINES) $(INCFLAGS) $(GLFLAGS)
+CFLAGS += $(DEFINES) $(INCFLAGS) $(GLFLAGS) $(DEF_FLAGS)
 CFLAGS += -Wall $(fpic)
 
 ifeq ($(DEBUG), 1)
@@ -226,4 +239,3 @@ clean:
 	rm -f $(TARGET)
 
 .PHONY: clean
-

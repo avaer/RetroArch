@@ -38,7 +38,9 @@ struct hid_driver
    void *(*init)(void);
    bool (*query_pad)(void *handle, unsigned pad);
    void (*free)(const void *handle);
-   bool (*button)(void *handle, unsigned pad, uint16_t button);
+   int16_t (*button)(void *handle, unsigned pad, uint16_t button);
+   int16_t (*state)(void *data, rarch_joypad_info_t *joypad_info,
+         const void *binds_data, unsigned port);
    void (*get_buttons)(void *handle, unsigned pad, input_bits_t *state);
    int16_t (*axis)(void *handle, unsigned pad, uint32_t axis);
    void (*poll)(void *handle);
@@ -56,8 +58,8 @@ struct hid_driver
    hid_instance.os_driver_data, pad, state)
 #define HID_BUTTON(pad, key) hid_instance.os_driver->button( \
    hid_instance.os_driver_data, pad, key)
-#define HID_AXIS(pad, axis) hid_instance.os_driver->axis( \
-   hid_instance.os_driver_data, pad, axis)
+#define HID_AXIS(pad, a) hid_instance.os_driver->axis( \
+   hid_instance.os_driver_data, pad, (a))
 #define HID_PAD_NAME(pad) \
    hid_instance.os_driver->name(hid_instance.os_driver_data, pad)
 #define HID_SET_PROTOCOL(pad, protocol) \
@@ -70,8 +72,6 @@ struct hid_driver
    hid_instance.os_driver_data)
 #define HID_MAX_SLOT() hid_instance.max_slot
 #define HID_PAD_CONNECTION_PTR(slot) &(hid_instance.pad_list[(slot)])
-
-
 
 struct hid_driver_instance {
    hid_driver_t *os_driver;

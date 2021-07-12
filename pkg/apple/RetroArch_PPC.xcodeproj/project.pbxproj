@@ -23,7 +23,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		7A868DD21AC85A8500B0EDDB /* en */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = en; path = OSX/en.lproj/MainMenu.xib; sourceTree = SOURCE_ROOT; };
+		7A868DD21AC85A8500B0EDDB /* en */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = en; path = OSX/en.lproj/PPC/MainMenu.xib; sourceTree = SOURCE_ROOT; };
 		7A868DD41AC85A8500B0EDDB /* en */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = en; path = OSX/en.lproj/Settings.xib; sourceTree = SOURCE_ROOT; };
 		7ACC4C4F1AC864B800D67175 /* griffin_objc.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = griffin_objc.m; path = ../../griffin/griffin_objc.m; sourceTree = SOURCE_ROOT; };
 		7AEFCD861921295E00FB5B6A /* griffin.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = griffin.c; path = ../../griffin/griffin.c; sourceTree = SOURCE_ROOT; };
@@ -232,9 +232,10 @@
 				ARCHS = "$(ONLY_ACTIVE_ARCH_PRE_XCODE_3_1)";
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../libretro-common/include",
+					"$(SRCROOT)/../../libretro-common/include/compat/zlib",
 					"$(SRCROOT)/../../deps",
 					"$(SRCROOT)/../../deps/stb",
-					"$(SRCROOT)/../../deps/libz",
+					"$(SRCROOT)/../../deps/rcheevos/include",
 					"$(SRCROOT)",
 				);
 				ONLY_ACTIVE_ARCH_PRE_XCODE_3_1 = "$(NATIVE_ARCH)";
@@ -248,9 +249,10 @@
 				ARCHS_STANDARD_32_BIT_PRE_XCODE_3_1 = "ppc i386";
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../libretro-common/include",
+					"$(SRCROOT)/../../libretro-common/include/compat/zlib",
 					"$(SRCROOT)/../../deps",
 					"$(SRCROOT)/../../deps/stb",
-					"$(SRCROOT)/../../deps/libz",
+					"$(SRCROOT)/../../deps/rcheevos/include",
 					"$(SRCROOT)",
 				);
 			};
@@ -287,17 +289,29 @@
 				MACOSX_DEPLOYMENT_TARGET = 10.4;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
-					"-DMSB_FIRST",
 					"-DHAVE_RUNAHEAD",
+					"-DHAVE_TRANSLATE",
+					"-DHAVE_ACCESSIBILITY",
 					"-DHAVE_GRIFFIN",
 					"-DHAVE_MINIUPNPC",
 					"-DHAVE_BUILTINMINIUPNPC",
 					"-DHAVE_UPDATE_ASSETS",
+					"-DHAVE_UPDATE_CORES",
+					"-DHAVE_ONLINE_UPDATER",
 					"-DHAVE_CHEEVOS",
+					"-DRC_DISABLE_LUA",
 					"-DHAVE_STB_FONT",
 					"-DHAVE_IOHIDMANAGER",
 					"-DHAVE_RGUI",
+					"-DHAVE_CONFIGFILE",
+					"-DHAVE_PATCH",
+					"-DHAVE_DSP_FILTER",
+					"-DHAVE_VIDEO_FILTER",
+					"-DHAVE_REWIND",
+					"-DHAVE_SCREENSHOTS",
+					"-DHAVE_CHEATS",
 					"-DHAVE_MENU",
+					"-DHAVE_GFX_WIDGETS",
 					"-DOSX",
 					"-DHAVE_OPENGL",
 					"-DHAVE_CC_RESAMPLER",
@@ -307,6 +321,7 @@
 					"-DHAVE_COREAUDIO",
 					"-DHAVE_DYNAMIC",
 					"-DHAVE_OVERLAY",
+					"-DHAVE_VIDEO_LAYOUT",
 					"-DHAVE_ZLIB",
 					"-DHAVE_RPNG",
 					"-DHAVE_RJPEG",
@@ -316,6 +331,7 @@
 					"-DHAVE_MAIN",
 					"-DHAVE_NETWORKGAMEPAD",
 					"-DHAVE_NETWORKING",
+					"-DHAVE_NETPLAYDISCOVERY",
 					"-DRARCH_INTERNAL",
 					"-DHAVE_THREADS",
 					"-DHAVE_DYLIB",
@@ -323,6 +339,7 @@
 					"-DHAVE_MATERIALUI",
 					"-DHAVE_HID",
 					"-DHAVE_XMB",
+					"-DHAVE_OZONE",
 					"-DHAVE_SHADERPIPELINE",
 					"-DHAVE_MMAP",
 					"-DHAVE_LIBRETRODB",
@@ -362,17 +379,29 @@
 				OTHER_CFLAGS = (
 					"-DNS_BLOCK_ASSERTIONS=1",
 					"-DNDEBUG",
-					"-DMSB_FIRST",
 					"-DHAVE_RUNAHEAD",
+					"-DHAVE_TRANSLATE",
+					"-DHAVE_ACCESSIBILITY",
 					"-DHAVE_GRIFFIN",
 					"-DHAVE_MINIUPNPC",
 					"-DHAVE_BUILTINMINIUPNPC",
 					"-DHAVE_UPDATE_ASSETS",
+					"-DHAVE_UPDATE_CORES",
+					"-DHAVE_ONLINE_UPDATER",
 					"-DHAVE_CHEEVOS",
+					"-DRC_DISABLE_LUA",
 					"-DHAVE_STB_FONT",
 					"-DHAVE_IOHIDMANAGER",
 					"-DHAVE_RGUI",
+					"-DHAVE_CONFIGFILE",
+					"-DHAVE_PATCH",
+					"-DHAVE_DSP_FILTER",
+					"-DHAVE_VIDEO_FILTER",
+					"-DHAVE_REWIND",
+					"-DHAVE_SCREENSHOTS",
+					"-DHAVE_CHEATS",
 					"-DHAVE_MENU",
+					"-DHAVE_GFX_WIDGETS",
 					"-DOSX",
 					"-DHAVE_OPENGL",
 					"-DHAVE_CC_RESAMPLER",
@@ -382,6 +411,7 @@
 					"-DHAVE_COREAUDIO",
 					"-DHAVE_DYNAMIC",
 					"-DHAVE_OVERLAY",
+					"-DHAVE_VIDEO_LAYOUT",
 					"-DHAVE_ZLIB",
 					"-DHAVE_RPNG",
 					"-DHAVE_RJPEG",
@@ -391,6 +421,7 @@
 					"-DHAVE_MAIN",
 					"-DHAVE_NETWORKGAMEPAD",
 					"-DHAVE_NETWORKING",
+					"-DHAVE_NETPLAYDISCOVERY",
 					"-DRARCH_INTERNAL",
 					"-DHAVE_THREADS",
 					"-DHAVE_DYLIB",
@@ -398,6 +429,7 @@
 					"-DHAVE_MATERIALUI",
 					"-DHAVE_HID",
 					"-DHAVE_XMB",
+					"-DHAVE_OZONE",
 					"-DHAVE_SHADERPIPELINE",
 					"-DHAVE_MMAP",
 					"-DHAVE_LIBRETRODB",

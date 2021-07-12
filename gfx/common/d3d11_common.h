@@ -17,11 +17,15 @@
 
 #include <retro_inline.h>
 
+#include <lists/string_list.h>
+
 #include "dxgi_common.h"
 #ifdef CINTERFACE
 #define D3D11_NO_HELPERS
 #endif
 #include <d3d11.h>
+
+#define D3D11_MAX_GPU_COUNT 16
 
 typedef const ID3D11ShaderResourceView* D3D11ShaderResourceViewRef;
 typedef const ID3D11SamplerState*       D3D11SamplerStateRef;
@@ -2159,6 +2163,7 @@ static INLINE HRESULT D3D11ValidateContextForDispatch(D3D11Debug debug, D3D11Dev
 {
    return debug->lpVtbl->ValidateContextForDispatch(debug, context);
 }
+#ifndef __WINRT__
 static INLINE BOOL D3D11SetUseRef(D3D11SwitchToRef switch_to_ref, BOOL use_ref)
 {
    return switch_to_ref->lpVtbl->SetUseRef(switch_to_ref, use_ref);
@@ -2167,6 +2172,7 @@ static INLINE BOOL D3D11GetUseRef(D3D11SwitchToRef switch_to_ref)
 {
    return switch_to_ref->lpVtbl->GetUseRef(switch_to_ref);
 }
+#endif
 static INLINE HRESULT D3D11SetShaderTrackingOptionsByType(
       D3D11TracingDevice tracing_device, UINT resource_type_flags, UINT options)
 {
@@ -2188,6 +2194,7 @@ static INLINE void D3D11ClearStoredMessages(D3D11InfoQueue info_queue)
 {
    info_queue->lpVtbl->ClearStoredMessages(info_queue);
 }
+#ifndef __WINRT__
 static INLINE HRESULT D3D11GetMessageA(
       D3D11InfoQueue info_queue,
       UINT64         message_index,
@@ -2196,6 +2203,7 @@ static INLINE HRESULT D3D11GetMessageA(
 {
    return info_queue->lpVtbl->GetMessageA(info_queue, message_index, message, message_byte_length);
 }
+#endif
 static INLINE UINT64 D3D11GetNumMessagesAllowedByStorageFilter(D3D11InfoQueue info_queue)
 {
    return info_queue->lpVtbl->GetNumMessagesAllowedByStorageFilter(info_queue);
@@ -2422,7 +2430,7 @@ D3D11UnmapBuffer(D3D11DeviceContext device_context, D3D11Buffer buffer, UINT sub
 #include <retro_math.h>
 #include <gfx/math/matrix_4x4.h>
 #include <libretro_d3d.h>
-#include "../video_driver.h"
+#include "../../retroarch.h"
 #include "../drivers_shader/slang_process.h"
 
 typedef struct d3d11_vertex_t
@@ -2445,6 +2453,7 @@ typedef struct
 
 typedef struct
 {
+   UINT32 colors[4];
    struct
    {
       float x, y, w, h;
@@ -2453,7 +2462,6 @@ typedef struct
    {
       float u, v, w, h;
    } coords;
-   UINT32 colors[4];
    struct
    {
       float scaling;
@@ -2479,9 +2487,6 @@ typedef struct ALIGN(16)
    } OutputSize;
    float time;
 } d3d11_uniform_t;
-
-static_assert(
-      (!(sizeof(d3d11_uniform_t) & 0xF)), "sizeof(d3d11_uniform_t) must be a multiple of 16");
 
 typedef struct d3d11_shader_t
 {
@@ -2519,6 +2524,12 @@ typedef struct
    bool                  resize_render_targets;
    bool                  init_history;
    d3d11_shader_t        shaders[GFX_MAX_SHADERS];
+#ifdef __WINRT__
+   DXGIFactory2 factory;
+#else
+   DXGIFactory factory;
+#endif
+   DXGIAdapter adapter;
 
 	struct
    {
@@ -2557,12 +2568,13 @@ typedef struct
 
    struct
    {
-      d3d11_texture_t texture[GFX_MAX_FRAME_HISTORY + 1];
-      D3D11Buffer     vbo;
-      D3D11Buffer     ubo;
-      D3D11_VIEWPORT  viewport;
-      float4_t        output_size;
-      int             rotation;
+      d3d11_texture_t            texture[GFX_MAX_FRAME_HISTORY + 1];
+      D3D11ShaderResourceView    last_texture_view;
+      D3D11Buffer                vbo;
+      D3D11Buffer                ubo;
+      D3D11_VIEWPORT             viewport;
+      float4_t                   output_size;
+      int                        rotation;
    } frame;
 
    struct
@@ -2574,9 +2586,13 @@ typedef struct
       D3D11_VIEWPORT             viewport;
       pass_semantics_t           semantics;
       uint32_t                   frame_count;
+      int32_t                    frame_direction;
    } pass[GFX_MAX_SHADERS];
 
    struct video_shader* shader_preset;
+   struct string_list *gpu_list;
+   IDXGIAdapter1 *current_adapter;
+   IDXGIAdapter1 *adapters[D3D11_MAX_GPU_COUNT];
    d3d11_texture_t      luts[GFX_MAX_TEXTURES];
 } d3d11_video_t;
 

@@ -18,6 +18,14 @@ cd ..
 LDFLAGS=-L. ./configure --disable-dynamic
 cd dist-scripts
 
+elif [ $PLATFORM = "ps2" ] ; then
+platform=ps2
+SALAMANDER=yes
+EXT=a
+OPTS=release
+
+mkdir -p ../pkg/${platform}/cores/
+
 elif [ $PLATFORM = "psp1" ] ; then
 platform=psp1
 SALAMANDER=yes
@@ -35,6 +43,12 @@ platform=vita
 SALAMANDER=yes
 EXT=a
 mkdir -p ../pkg/vita/vpk
+
+# Nintendo Switch (libnx)
+elif [ $PLATFORM = "libnx" ] ; then
+platform=libnx
+EXT=a
+
 # CTR/3DS
 elif [ $PLATFORM = "ctr" ] ; then
 platform=ctr
@@ -66,6 +80,13 @@ elif [ $PLATFORM = "ngc" ] ; then
 platform=ngc
 MAKEFILE_GRIFFIN=yes
 EXT=a
+
+# PSL1GHT
+elif [ $PLATFORM = "psl1ght" ] ; then
+platform=psl1ght
+SALAMANDER=yes
+EXT=a
+ps3appid=SSNE10001
 
 # DEX PS3
 elif [ $PLATFORM = "dex-ps3" ] ; then
@@ -105,13 +126,17 @@ EXE_PATH=${CELL_SDK}/host-win32/bin
 GENPS3ISO_PATH=${PS3TOOLS_PATH}/ODE/genps3iso_v2.5
 SCETOOL_PATH=${PS3TOOLS_PATH}/scetool/scetool.exe
 SCETOOL_FLAGS_ODE="--sce-type=SELF --compress-data=TRUE --self-type=APP --key-revision=04 --self-fw-version=0003004100000000 --self-app-version=0001000000000000 --self-auth-id=1010000001000003 --self-vendor-id=01000002 --self-cap-flags=00000000000000000000000000000000000000000000003b0000000100040000  --encrypt"
+elif [ $PLATFORM = "dos" ]; then
+    platform=dos
+    MAKEFILE_GRIFFIN=yes
+    EXT=a
+    SALAMANDER=yes
 fi
 
 # Cleanup Salamander core if it exists
 if [ $SALAMANDER = "yes" ]; then
 make -C ../ -f Makefile.${platform}.salamander clean || exit 1
 fi
-
 
 # Cleanup existing core if it exists
 if [ $PLATFORM = "ode-ps3" ]; then
@@ -127,13 +152,20 @@ fi
 # Compile Salamander core
 if [ $SALAMANDER = "yes" ]; then
    make -C ../ -f Makefile.${platform}.salamander $OPTS || exit 1
+   if [ $PLATFORM = "ps2" ] ; then
+   mv -f ../raboot.elf ../pkg/${platform}/raboot.elf
+   fi
    if [ $PLATFORM = "psp1" ] ; then
    mv -f ../EBOOT.PBP ../pkg/${platform}/EBOOT.PBP
+   fi
+   if [ $platform = "dos" ] ; then
+   mkdir -p ../pkg/${platform}
+   mv -f ../retrodos_salamander.exe ../pkg/${platform}/RETRODOS.EXE
    fi
    if [ $PLATFORM = "vita" ] ; then
      mkdir -p ../pkg/${platform}/retroarch.vpk/vpk/sce_sys/livearea/contents
      vita-make-fself -c -s ../retroarchvita_salamander.velf ../pkg/${platform}/retroarch.vpk/vpk/eboot.bin
-     vita-mksfoex -s TITLE_ID=RETROVITA "RetroArch" ../pkg/${platform}/retroarch.vpk/vpk/sce_sys/param.sfo
+     vita-mksfoex -s TITLE_ID=RETROVITA "RetroArch" -d ATTRIBUTE2=12 ../pkg/${platform}/retroarch.vpk/vpk/sce_sys/param.sfo
      cp ../pkg/${platform}/assets/ICON0.PNG ../pkg/${platform}/retroarch.vpk/vpk/sce_sys/icon0.png
      cp -R ../pkg/${platform}/assets/livearea ../pkg/${platform}/retroarch.vpk/vpk/sce_sys/
      make -C ../ -f Makefile.${platform}.salamander clean || exit 1
@@ -153,8 +185,18 @@ fi
 
 COUNTER=0
 
+if [ $PLATFORM = "libnx" ]; then
+   echo Buildbot: building static core for ${platform}
+   mkdir -p ../pkg/${platform}/switch
+   make -C ../ -f Makefile.${platform} HAVE_STATIC_DUMMY=1 -j3 || exit 1
+   mv -f ../retroarch_switch.nro ../pkg/${platform}/switch/retroarch_switch.nro
+   make -C ../ -f Makefile.${platform} clean || exit 1
+fi
+
 #for f in *_${platform}.${EXT} ; do
 for f in `ls -v *_${platform}.${EXT}`; do
+
+   echo Buildbot: building ${name} for ${platform}
    name=`echo "$f" | sed "s/\(_libretro_${platform}\|\).${EXT}$//"`
    async=0
    pthread=0
@@ -207,6 +249,11 @@ for f in `ls -v *_${platform}.${EXT}`; do
       make -C ../ -f Makefile LINK=g++ $whole_archive $big_stack -j3 || exit 1
    elif [ $PLATFORM = "ctr" ]; then
       make -C ../ -f Makefile.${platform} $OPTS LIBRETRO=$name $whole_archive $big_stack -j3 || exit 1
+   elif [ $PLATFORM = "libnx" ]; then
+      make -C ../ -f Makefile.${platform} $OPTS APP_TITLE="$name" LIBRETRO=$name $whole_archive $big_stack -j3 || exit 1
+   elif [ $PLATFORM = "ps2" ]; then
+      # TODO PS2 should be able to compile in parallel
+      make -C ../ -f Makefile.${platform} $OPTS || exit 1
    else
       make -C ../ -f Makefile.${platform} $OPTS $whole_archive $big_stack -j3 || exit 1
    fi
@@ -221,7 +268,13 @@ for f in `ls -v *_${platform}.${EXT}`; do
    fi
 
    # Move executable files
-   if [ $platform = "ps3" ] ; then
+   if [ $platform = "psl1ght" ] ; then
+       mv -fv ../retroarch_psl1ght.self ../pkg/psl1ght/pkg/USRDIR/cores/"${name}_libretro_${platform}.SELF"
+       if [ -d ../../dist/info ]; then
+           mkdir -p ../pkg/psl1ght/pkg/USRDIR/cores/info
+           cp -fv ../../dist/info/"${name}_libretro.info" ../pkg/psl1ght/pkg/USRDIR/cores/info/"${name}_libretro.info"
+       fi
+   elif [ $platform = "ps3" ] ; then
       if [ $PLATFORM = "ode-ps3" ] ; then
          mv -fv ../CORE.SELF ../pkg/${platform}_iso/PS3_GAME/USRDIR/cores/"${name}_libretro_${platform}.SELF"
          if [ -d ../../dist/info ]; then
@@ -235,6 +288,8 @@ for f in `ls -v *_${platform}.${EXT}`; do
             cp -fv ../../dist/info/"${name}_libretro.info" ../pkg/${platform}/SSNE10000/USRDIR/cores/info/"${name}_libretro.info"
          fi
       fi
+   elif [ $PLATFORM = "ps2" ] ; then
+      mv -f ../retroarchps2.elf ../pkg/${platform}/cores/${name}_libretro_${platform}.elf
    elif [ $PLATFORM = "psp1" ] ; then
       mv -f ../EBOOT.PBP ../pkg/${platform}/cores/${name}_libretro.PBP
    elif [ $PLATFORM = "vita" ] ; then
@@ -249,12 +304,18 @@ for f in `ls -v *_${platform}.${EXT}`; do
       mv -f ../retroarch_3ds.cia ../pkg/${platform}/build/cia/${name}_libretro.cia
       mv -f ../retroarch_3ds.3dsx ../pkg/${platform}/build/3dsx/${name}_libretro.3dsx
       mv -f ../retroarch_3ds.3ds ../pkg/${platform}/build/rom/${name}_libretro.3ds
+   elif [ $PLATFORM = "libnx" ] ; then
+      mkdir -p ../pkg/${platform}/retroarch/cores/
+      mv -f ../retroarch_switch.nro ../pkg/${platform}/retroarch/cores/${name}_libretro_${platform}.nro
    elif [ $PLATFORM = "unix" ] ; then
       mv -f ../retroarch ../pkg/${platform}/${name}_libretro.elf
    elif [ $PLATFORM = "ngc" ] ; then
       mv -f ../retroarch_${platform}.dol ../pkg/${platform}/${name}_libretro_${platform}.dol
    elif [ $PLATFORM = "wii" ] ; then
-      mv -f ../retroarch_${platform}.dol ../pkg/${platform}/${name}_libretro_${platform}.dol
+       mv -f ../retroarch_${platform}.dol ../pkg/${platform}/${name}_libretro_${platform}.dol
+   elif [ $PLATFORM = "dos" ] ; then
+      mkdir -p ../pkg/${platform}/cores
+      mv -f ../retrodos.exe ../pkg/${platform}/cores/${name}.exe
    elif [ $PLATFORM = "emscripten" ] ; then
       mkdir -p ../pkg/emscripten/
       mv -f ../${name}_libretro.js ../pkg/emscripten/${name}_libretro.js
@@ -265,8 +326,13 @@ for f in `ls -v *_${platform}.${EXT}`; do
    fi
 
    # Remove executable files
-   if [ $platform = "ps3" ] ; then
+   if [ $platform = "psl1ght" ] ; then
+       rm -f ../retroarch_${platform}.elf ../retroarch_${platform}.self ../CORE.SELF
+   elif [ $platform = "ps3" ] ; then
       rm -f ../retroarch_${platform}.elf ../retroarch_${platform}.self ../CORE.SELF
+   elif [ $PLATFORM = "ps2" ] ; then
+      rm -f ../retroarchps2.elf
+      rm -f ../retroarchps2-debug.elf
    elif [ $PLATFORM = "psp1" ] ; then
       rm -f ../retroarchpsp.elf
    elif [ $PLATFORM = "vita" ] ; then
@@ -275,6 +341,10 @@ for f in `ls -v *_${platform}.${EXT}`; do
       rm -f ../retroarch_3ds.elf
       rm -f ../retroarch_3ds.bnr
       rm -f ../retroarch_3ds.icn
+   elif [ $PLATFORM = "libnx" ] ; then
+      rm -f ../retroarch_switch.elf
+      rm -f ../retroarch_switch.nacp
+      rm -f ../retroarch_switch.nso
    elif [ $PLATFORM = "unix" ] ; then
       rm -f ../retroarch
    elif [ $PLATFORM = "ngc" ] ; then
@@ -300,7 +370,7 @@ for f in `ls -v *_${platform}.${EXT}`; do
 done
 
 # Additional build step
-if [ $platform = "ps3" ] ; then
+if [ $platform = "ps3" ] || [ $platform = "psl1ght" ] ; then
    if [ $PLATFORM = "ode-ps3" ] ; then
       echo Deploy : Assets...
       if [ -d ../media/assets ]; then
@@ -327,29 +397,33 @@ if [ $platform = "ps3" ] ; then
          cp -r ../media/shaders_cg/* ../pkg/${platform}_iso/PS3_GAME/USRDIR/cores/shaders_cg
       fi
    else
+      ps3pkgdir=pkg/ps3/SSNE10000
+      if [ $platform = psl1ght ]; then
+	 ps3pkgdir=pkg/psl1ght/pkg
+      fi
       echo Deploy : Assets...
       if [ -d ../media/assets ]; then
-         mkdir -p ../pkg/${platform}/SSNE10000/USRDIR/cores/assets
-         cp -r ../media/assets/* ../pkg/${platform}/SSNE10000/USRDIR/cores/assets
+         mkdir -p ../${ps3pkgdir}/USRDIR/cores/assets
+         cp -r ../media/assets/* ../${ps3pkgdir}/USRDIR/cores/assets
       fi
       echo Deploy : Databases...
       if [ -d ../media/libretrodb/rdb ]; then
-         mkdir -p ../pkg/${platform}/SSNE10000/USRDIR/cores/database/rdb
-         cp -r ../media/libretrodb/rdb/* ../pkg/${platform}/SSNE10000/USRDIR/cores/database/rdb
+         mkdir -p ../${ps3pkgdir}/USRDIR/cores/database/rdb
+         cp -r ../media/libretrodb/rdb/* ../${ps3pkgdir}/USRDIR/cores/database/rdb
 	  fi
 	  if [ -d ../media/libretrodb/cursors ]; then
-         mkdir -p ../pkg/${platform}/SSNE10000/USRDIR/cores/database/cursors
-         cp -r ../media/libretrodb/cursors/* ../pkg/${platform}/SSNE10000/USRDIR/cores/database/cursors
+         mkdir -p ../${ps3pkgdir}/USRDIR/cores/database/cursors
+         cp -r ../media/libretrodb/cursors/* ../${ps3pkgdir}/USRDIR/cores/database/cursors
       fi
       echo Deploy : Overlays...
       if [ -d ../media/overlays ]; then
-         mkdir -p ../pkg/${platform}/SSNE10000/USRDIR/cores/overlays
-         cp -r ../media/overlays/* ../pkg/${platform}/SSNE10000/USRDIR/cores/overlays
+         mkdir -p ../${ps3pkgdir}/USRDIR/cores/overlays
+         cp -r ../media/overlays/* ../${ps3pkgdir}/USRDIR/cores/overlays
       fi
       echo Deploy : Shaders...
       if [ -d ../media/shaders_cg ]; then
-         mkdir -p ../pkg/${platform}/SSNE10000/USRDIR/cores/shaders_cg
-         cp -r ../media/shaders_cg/* ../pkg/${platform}/SSNE10000/USRDIR/cores/shaders_cg
+         mkdir -p ../${ps3pkgdir}/USRDIR/cores/shaders_cg
+         cp -r ../media/shaders_cg/* ../${ps3pkgdir}/USRDIR/cores/shaders_cg
       fi
    fi
 fi
@@ -368,6 +442,8 @@ elif [ $PLATFORM = "cex-ps3" ] ; then
    (cd ../tools/ps3/ps3py && python2 setup.py build)
    find ../tools/ps3/ps3py/build -name '*.dll' -exec cp {} ../tools/ps3/ps3py \;
    ../tools/ps3/ps3py/pkg.py --contentid UP0001-SSNE10000_00-0000000000000001 ../pkg/${platform}/SSNE10000/ ../pkg/${platform}/RetroArch.PS3.CEX.PS3.pkg
+elif [ $PLATFORM = "psl1ght" ] ; then
+   ${PS3DEV}/bin/pkg.py --contentid UP0001-SSNE10001_00-0000000000000001 ../pkg/psl1ght/pkg/ ../pkg/psl1ght/RetroArch.PSL1GHT.pkg
 elif [ $PLATFORM = "ode-ps3" ] ; then
    rsync -av ../pkg/${platform}_iso/PS3_GAME/USRDIR/cores/*.SELF ../pkg/${platform}/${PLATFORM}/
    $SCETOOL_PATH $SCETOOL_FLAGS_ODE ../retroarch-salamander_${platform}.elf ../pkg/${platform}_iso/PS3_GAME/USRDIR/EBOOT.BIN

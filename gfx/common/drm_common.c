@@ -21,20 +21,19 @@
 
 #include "drm_common.h"
 
+/* TODO/FIXME - globals */
+drmEventContext g_drm_evctx;
 struct pollfd g_drm_fds;
-
 uint32_t g_connector_id               = 0;
 int g_drm_fd                          = 0;
 uint32_t g_crtc_id                    = 0;
-
-static drmModeCrtc *g_orig_crtc       = NULL;
-
-static drmModeRes *g_drm_resources    = NULL;
+drmModeCrtc *g_orig_crtc              = NULL;
 drmModeConnector *g_drm_connector     = NULL;
-static drmModeEncoder *g_drm_encoder  = NULL;
 drmModeModeInfo *g_drm_mode           = NULL;
 
-drmEventContext g_drm_evctx;
+/* TODO/FIXME - static globals */
+static drmModeRes *g_drm_resources    = NULL;
+static drmModeEncoder *g_drm_encoder  = NULL;
 
 /* Restore the original CRTC. */
 void drm_restore_crtc(void)
@@ -64,11 +63,11 @@ bool drm_get_resources(int fd)
    return true;
 }
 
-bool drm_get_connector(int fd, video_frame_info_t *video_info)
+bool drm_get_connector(int fd, unsigned monitor_index)
 {
    unsigned i;
-   unsigned monitor_index = 0;
-   unsigned monitor       = MAX(video_info->monitor_index, 1);
+   unsigned monitor_index_count = 0;
+   unsigned monitor       = MAX(monitor_index, 1);
 
    /* Enumerate all connectors. */
 
@@ -86,14 +85,14 @@ bool drm_get_connector(int fd, video_frame_info_t *video_info)
          RARCH_LOG("[DRM]: Connector %d has %d modes.\n", i, conn->count_modes);
          if (connected && conn->count_modes > 0)
          {
-            monitor_index++;
-            RARCH_LOG("[DRM]: Connector %d assigned to monitor index: #%u.\n", i, monitor_index);
+            monitor_index_count++;
+            RARCH_LOG("[DRM]: Connector %d assigned to monitor index: #%u.\n", i, monitor_index_count);
          }
          drmModeFreeConnector(conn);
       }
    }
 
-   monitor_index = 0;
+   monitor_index_count = 0;
 
    for (i = 0; (int)i < g_drm_resources->count_connectors; i++)
    {
@@ -105,8 +104,8 @@ bool drm_get_connector(int fd, video_frame_info_t *video_info)
       if (g_drm_connector->connection == DRM_MODE_CONNECTED
             && g_drm_connector->count_modes > 0)
       {
-         monitor_index++;
-         if (monitor_index == monitor)
+         monitor_index_count++;
+         if (monitor_index_count == monitor)
             break;
       }
 

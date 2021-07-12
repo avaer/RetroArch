@@ -1,5 +1,6 @@
 /*  RetroArch - A frontend for libretro.
- *  Copyright (C) 2011-2017 - Daniel De Matteis
+ *  Copyright (C) 2011-2019 - Daniel De Matteis
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -23,12 +24,23 @@
 
 RETRO_BEGIN_DECLS
 
+enum rarch_dir_type
+{
+   RARCH_DIR_NONE = 0,
+   RARCH_DIR_SAVEFILE,
+   RARCH_DIR_SAVESTATE,
+   RARCH_DIR_CURRENT_SAVEFILE,
+   RARCH_DIR_CURRENT_SAVESTATE,
+   RARCH_DIR_SYSTEM
+};
+
 enum rarch_content_type
 {
    RARCH_CONTENT_NONE = 0,
    RARCH_CONTENT_MOVIE,
    RARCH_CONTENT_MUSIC,
-   RARCH_CONTENT_IMAGE
+   RARCH_CONTENT_IMAGE,
+   RARCH_CONTENT_GONG
 };
 
 enum rarch_path_type
@@ -45,21 +57,21 @@ enum rarch_path_type
    RARCH_PATH_SUBSYSTEM
 };
 
-void path_deinit_subsystem(void);
+void dir_clear(enum rarch_dir_type type);
+
+size_t dir_get_size(enum rarch_dir_type type);
+
+char *dir_get_ptr(enum rarch_dir_type type);
+
+void dir_set(enum rarch_dir_type type, const char *path);
+
+void dir_check_defaults(void);
 
 void path_deinit_savefile(void);
 
-void path_init_savefile(void);
-
-void path_fill_names(void);
-
 bool path_set(enum rarch_path_type type, const char *path);
 
-void path_set_redirect(void);
-
 void path_set_special(char **argv, unsigned num_content);
-
-void path_set_basename(const char *path);
 
 size_t path_get_realsize(enum rarch_path_type type);
 
@@ -70,8 +82,6 @@ char *path_get_ptr(enum rarch_path_type type);
 const char *path_get(enum rarch_path_type type);
 
 void path_clear(enum rarch_path_type type);
-
-void path_clear_all(void);
 
 bool path_is_empty(enum rarch_path_type type);
 

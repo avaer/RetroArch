@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2018 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (vector_2.h).
@@ -54,7 +54,7 @@ static INLINE float overflow(void)
    unsigned i;
    volatile float f = 1e10;
 
-   for(i = 0; i < 10; ++i)
+   for (i = 0; i < 10; ++i)
       f *= f;
    return f;
 }
@@ -136,4 +136,3 @@ static INLINE unsigned int vec2_packHalf2x16(float vec0, float vec1)
 RETRO_END_DECLS
 
 #endif
-

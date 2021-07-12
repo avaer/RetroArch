@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2018 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (stdin_stream.h).
@@ -37,4 +37,3 @@ size_t read_stdin(char *buf, size_t size);
 RETRO_END_DECLS
 
 #endif
-

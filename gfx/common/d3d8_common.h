@@ -22,7 +22,7 @@
 
 #include <d3d8.h>
 
-#include "../video_driver.h"
+#include "../../retroarch.h"
 #include "../../verbosity.h"
 
 RETRO_BEGIN_DECLS
@@ -36,6 +36,9 @@ typedef struct d3d8_video
    bool overlays_enabled;
    /* TODO - refactor this away properly. */
    bool resolution_hd_enable;
+
+   /* Only used for Xbox */
+   bool widescreen_mode;
 
    unsigned cur_mon_id;
    unsigned dev_rotation;
@@ -72,7 +75,7 @@ typedef struct d3d8_video
 
 static INLINE bool d3d8_swap(void *data, LPDIRECT3DDEVICE8 dev)
 {
-   if (IDirect3DDevice8_Present(dev, NULL, NULL, NULL, NULL) 
+   if (IDirect3DDevice8_Present(dev, NULL, NULL, NULL, NULL)
          == D3DERR_DEVICELOST)
       return false;
    return true;
@@ -199,13 +202,13 @@ static INLINE void d3d8_set_sampler_address_v(LPDIRECT3DDEVICE8 dev,
 }
 
 static INLINE void d3d8_set_sampler_minfilter(void *_dev,
-      unsigned sampler, unsigned value)
+      unsigned sampler, enum D3DTEXTUREFILTERTYPE value)
 {
    d3d8_set_texture_stage_state(_dev, sampler, D3DTSS_MINFILTER, value);
 }
 
 static INLINE void d3d8_set_sampler_magfilter(void *_dev,
-      unsigned sampler, unsigned value)
+      unsigned sampler, enum D3DTEXTUREFILTERTYPE value)
 {
    d3d8_set_texture_stage_state(_dev, sampler, D3DTSS_MAGFILTER, value);
 }
@@ -388,7 +391,7 @@ static INLINE void d3d8_device_set_render_target(
 static INLINE bool d3d8_get_render_state(LPDIRECT3DDEVICE8 dev,
       D3DRENDERSTATETYPE state, DWORD *value)
 {
-   if (dev && 
+   if (dev &&
          IDirect3DDevice8_GetRenderState(dev, state, value) == D3D_OK)
       return true;
    return false;
@@ -433,8 +436,8 @@ bool d3d8_create_device(void *dev,
 bool d3d8_reset(void *dev, void *d3dpp);
 
 static INLINE bool d3d8_device_get_backbuffer(
-      LPDIRECT3DDEVICE8 dev, 
-      unsigned idx, unsigned swapchain_idx, 
+      LPDIRECT3DDEVICE8 dev,
+      unsigned idx, unsigned swapchain_idx,
       unsigned backbuffer_type, void **data)
 {
    if (dev &&
@@ -514,6 +517,8 @@ static INLINE INT32 d3d8_get_xrgb8888_format(void)
    return D3DFMT_X8R8G8B8;
 #endif
 }
+
+void d3d8_set_mvp(void *data, const void *userdata);
 
 RETRO_END_DECLS
 

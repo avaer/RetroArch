@@ -47,13 +47,7 @@
 #include "ecdh.h"
 #endif
 
-#if defined(MBEDTLS_ZLIB_SUPPORT)
-#include "zlib.h"
-#endif
-
-#if defined(MBEDTLS_HAVE_TIME)
-#include "mbedtls/platform_time.h"
-#endif
+#include <time.h>
 
 /*
  * SSL Error codes
@@ -412,7 +406,7 @@ typedef enum
     MBEDTLS_SSL_HANDSHAKE_WRAPUP,
     MBEDTLS_SSL_HANDSHAKE_OVER,
     MBEDTLS_SSL_SERVER_NEW_SESSION_TICKET,
-    MBEDTLS_SSL_SERVER_HELLO_VERIFY_REQUEST_SENT,
+    MBEDTLS_SSL_SERVER_HELLO_VERIFY_REQUEST_SENT
 }
 mbedtls_ssl_states;
 
@@ -547,9 +541,7 @@ typedef struct mbedtls_ssl_flight_item mbedtls_ssl_flight_item;
  */
 struct mbedtls_ssl_session
 {
-#if defined(MBEDTLS_HAVE_TIME)
-    mbedtls_time_t start;       /*!< starting time      */
-#endif
+    time_t start;               /*!< starting time      */
     int ciphersuite;            /*!< chosen ciphersuite */
     int compression;            /*!< chosen compression */
     size_t id_len;              /*!< session id length  */
@@ -863,9 +855,6 @@ struct mbedtls_ssl_context
     size_t out_msglen;          /*!< record header: message length    */
     size_t out_left;            /*!< amount of data not yet written   */
 
-#if defined(MBEDTLS_ZLIB_SUPPORT)
-    unsigned char *compress_buf;        /*!<  zlib data buffer        */
-#endif
 #if defined(MBEDTLS_SSL_CBC_RECORD_SPLITTING)
     signed char split_done;     /*!< current record already splitted? */
 #endif

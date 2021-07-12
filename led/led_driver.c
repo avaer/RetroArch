@@ -16,48 +16,56 @@
 #include <string/stdstring.h>
 
 #include "led_driver.h"
-#include "../configuration.h"
-#include "../verbosity.h"
 
 static const led_driver_t *current_led_driver = NULL;
 
-bool led_driver_init(void)
+static void null_led_init(void) { }
+static void null_led_free(void) { }
+static void null_led_set(int led, int state) { }
+
+static const led_driver_t null_led_driver = {
+   null_led_init,
+   null_led_free,
+   null_led_set,
+   "null"
+};
+
+void led_driver_init(const char *led_driver)
 {
-   settings_t *settings = config_get_ptr();
-   char *drivername     = settings ? settings->arrays.led_driver : NULL;
+   const char *drivername = led_driver;
 
-   if(!drivername)
-      drivername = (char*)"null";
+   if (!drivername)
+      drivername          = (const char*)"null";
 
-   current_led_driver = &null_led_driver;
+   current_led_driver     = &null_led_driver;
 
 #ifdef HAVE_OVERLAY
-   if(string_is_equal("overlay", drivername))
-      current_led_driver = &overlay_led_driver;
+   if (string_is_equal("overlay", drivername))
+      current_led_driver  = &overlay_led_driver;
 #endif
 
-#if HAVE_RPILED
-   if(string_is_equal("rpi", drivername))
-      current_led_driver = &rpi_led_driver;
-#endif          
+#ifdef HAVE_RPILED
+   if (string_is_equal("rpi", drivername))
+      current_led_driver  = &rpi_led_driver;
+#endif
 
-   RARCH_LOG("[LED]: LED driver = '%s' %p\n",
-         drivername, current_led_driver);
+#if defined(_WIN32) && !defined(_XBOX) && !defined(__WINRT__)
+   if (string_is_equal("keyboard", drivername))
+      current_led_driver  = &keyboard_led_driver;
+#endif
 
-   if(current_led_driver)
+   if (current_led_driver)
       (*current_led_driver->init)();
-
-   return true;
 }
 
 void led_driver_free(void)
 {
-   if(current_led_driver)
+   if (current_led_driver)
       (*current_led_driver->free)();
 }
 
 void led_driver_set_led(int led, int value)
 {
-   if(current_led_driver)
+   if (current_led_driver)
       (*current_led_driver->set_led)(led, value);
 }

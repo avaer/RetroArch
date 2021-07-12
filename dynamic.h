@@ -1,6 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2017 - Daniel De Matteis
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -20,26 +21,10 @@
 #include <boolean.h>
 #include <retro_common_api.h>
 #include <libretro.h>
-#include <dynamic/dylib.h>
 
 #include "core_type.h"
 
 RETRO_BEGIN_DECLS
-
-/**
- * libretro_get_system_info:
- * @path                         : Path to libretro library.
- * @info                         : System info information.
- * @load_no_content              : If true, core should be able to auto-start
- *                                 without any content loaded.
- *
- * Gets system info from an arbitrary lib.
- * The struct returned must be freed as strings are allocated dynamically.
- *
- * Returns: true (1) if successful, otherwise false (0).
- **/
-bool libretro_get_system_info(const char *path,
-      struct retro_system_info *info, bool *load_no_content);
 
 /**
  * libretro_free_system_info:
@@ -68,20 +53,9 @@ const struct retro_controller_description *
    libretro_find_controller_description(
          const struct retro_controller_info *info, unsigned id);
 
-/**
- * rarch_environment_cb:
- * @cmd                          : Identifier of command.
- * @data                         : Pointer to data.
- *
- * Environment callback function implementation.
- *
- * Returns: true (1) if environment callback command could
- * be performed, otherwise false (0).
- **/
-bool rarch_environment_cb(unsigned cmd, void *data);
-
 struct retro_core_t
 {
+   uint64_t serialization_quirks_v;
    void (*retro_init)(void);
    void (*retro_deinit)(void);
    unsigned (*retro_api_version)(void);
@@ -114,39 +88,21 @@ struct retro_core_t
    bool symbols_inited;
    bool game_loaded;
    bool input_polled;
+   bool has_set_subsystems;
    bool has_set_input_descriptors;
-   uint64_t serialization_quirks_v;
 };
 
 bool libretro_get_shared_context(void);
 
-/**
- * init_libretro_sym:
- * @type                        : Type of core to be loaded.
- *                                If CORE_TYPE_DUMMY, will
- *                                load dummy symbols.
- *
- * Initializes libretro symbols and
- * setups environment callback functions. Returns true on success,
- * or false if symbols could not be loaded.
- **/
-bool init_libretro_sym(enum rarch_core_type type,
-      struct retro_core_t *core);
+/* Arbitrary twenty subsystems limite */
+#define SUBSYSTEM_MAX_SUBSYSTEMS 20
+/* Arbitrary 10 roms for each subsystem limit */
+#define SUBSYSTEM_MAX_SUBSYSTEM_ROMS 10
 
-bool init_libretro_sym_custom(enum rarch_core_type type, struct retro_core_t *current_core, const char *lib_path, dylib_t *lib_handle_p);
-
-/**
- * uninit_libretro_sym:
- *
- * Frees libretro core.
- *
- * Frees all core options,
- * associated state, and
- * unbind all libretro callback symbols.
- **/
-void uninit_libretro_sym(struct retro_core_t *core);
+/* TODO/FIXME - globals */
+extern struct retro_subsystem_info subsystem_data[SUBSYSTEM_MAX_SUBSYSTEMS];
+extern unsigned subsystem_current_count;
 
 RETRO_END_DECLS
 
 #endif
-

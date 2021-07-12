@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  copyright (c) 2011-2015 - Daniel De Matteis
- *  copyright (c) 2016 - Brad Parker
+ *  copyright (c) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -24,6 +24,19 @@
 typedef struct vga
 {
    bool color;
+   bool vga_rgb32;
+
+   unsigned vga_menu_width;
+   unsigned vga_menu_height;
+   unsigned vga_menu_pitch;
+   unsigned vga_menu_bits;
+   unsigned vga_video_width;
+   unsigned vga_video_height;
+   unsigned vga_video_pitch;
+   unsigned vga_video_bits;
+
+   unsigned char *vga_menu_frame;
+   unsigned char *vga_frame;
 } vga_t;
 
 #endif

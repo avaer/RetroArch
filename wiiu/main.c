@@ -18,9 +18,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+#if defined(HAVE_IOSUHAX) && defined(HAVE_LIBFAT)
 #include <fat.h>
 #include <iosuhax.h>
+#include <iosuhax_devoptab.h>
 #include <sys/iosupport.h>
+#endif
 
 #include "hbl.h"
 
@@ -50,9 +54,11 @@ void __init(void);
 static void fsdev_init(void);
 static void fsdev_exit(void);
 
-bool iosuhaxMount = 0;
-
+bool iosuhaxMount      = 0;
+int fsaFd              = -1;
+#ifdef HAVE_IOSUHAX
 static int mcp_hook_fd = -1;
+#endif
 
 /* HBL elf entry point */
 int __entry_menu(int argc, char **argv)
@@ -73,72 +79,58 @@ int __entry_menu(int argc, char **argv)
 }
 
 /* RPX entry point */
-__attribute__((noreturn))
-void _start(int argc, char **argv)
+__attribute__((noreturn)) void _start(int argc, char **argv)
 {
    memoryInitialize();
    __init();
    fsdev_init();
    main(argc, argv);
    fsdev_exit();
-
-   /* TODO: fix elf2rpl so it doesn't error with "Could not find matching symbol
-      for relocation" then uncomment this */
-#if 0
    __fini();
-#endif
    memoryRelease();
    SYSRelaunchTitle(0, 0);
    exit(0);
 }
 
-void __eabi(void)
-{
+void __eabi(void) { }
 
-}
-
-__attribute__((weak))
-void __init(void)
+__attribute__((weak)) void __init(void)
 {
    extern void (*const __CTOR_LIST__)(void);
    extern void (*const __CTOR_END__)(void);
 
    void (*const *ctor)(void) = &__CTOR_LIST__;
-   while (ctor < &__CTOR_END__) {
+   while (ctor < &__CTOR_END__)
       (*ctor++)();
-   }
 }
 
-__attribute__((weak))
-void __fini(void)
+__attribute__((weak)) void __fini(void)
 {
    extern void (*const __DTOR_LIST__)(void);
    extern void (*const __DTOR_END__)(void);
 
    void (*const *dtor)(void) = &__DTOR_LIST__;
-   while (dtor < &__DTOR_END__) {
+   while (dtor < &__DTOR_END__)
       (*dtor++)();
-   }
 }
 
+#ifdef HAVE_IOSUHAX
 /* libiosuhax related */
 
-//just to be able to call async
-void someFunc(void *arg)
-{
-   (void)arg;
-}
+/* just to be able to call async */
+static void some_func(void *arg) { (void)arg; }
 
 int MCPHookOpen(void)
 {
-   //take over mcp thread
+   /* take over mcp thread */
    mcp_hook_fd = IOS_Open("/dev/mcp", 0);
 
    if (mcp_hook_fd < 0)
       return -1;
 
-   IOS_IoctlAsync(mcp_hook_fd, 0x62, (void *)0, 0, (void *)0, 0, someFunc, (void *)0);
-   //let wupserver start up
+   IOS_IoctlAsync(mcp_hook_fd, 0x62, (void *)0, 0,
+         (void *)0, 0, some_func, (void *)0);
+   /* let wupserver start up */
    usleep(1000);
 
    if (IOSUHAX_Open("/dev/mcp") < 0)
@@ -156,34 +148,43 @@ void MCPHookClose(void)
    if (mcp_hook_fd < 0)
       return;
 
-   //close down wupserver, return control to mcp
+   /* close down wupserver, return control to mcp */
    IOSUHAX_Close();
-   //wait for mcp to return
+   /* wait for mcp to return */
    usleep(1000);
    IOS_Close(mcp_hook_fd);
    mcp_hook_fd = -1;
 }
+#endif /* HAVE_IOSUHAX */
 
 static bool try_init_iosuhax(void)
 {
+#ifdef HAVE_IOSUHAX
    int result = IOSUHAX_Open(NULL);
-   if(result < 0)
+   if (result < 0)
       result = MCPHookOpen();
 
-   return (result < 0) ? false : true;
+   if (result < 0)
+      return false;
+   return true;
+#else /* don't HAVE_IOSUHAX */
+   return false;
+#endif
 }
 
 static void try_shutdown_iosuhax(void)
 {
-  if(!iosuhaxMount)
-    return;
+#ifdef HAVE_IOSUHAX
+   if (!iosuhaxMount)
+      return;
 
-  if (mcp_hook_fd >= 0)
-    MCPHookClose();
-  else
-    IOSUHAX_Close();
+   if (mcp_hook_fd >= 0)
+      MCPHookClose();
+   else
+      IOSUHAX_Close();
+#endif //HAVE_IOSUHAX
 
-  iosuhaxMount = false;
+   iosuhaxMount = false;
 }
 
 /**
@@ -196,10 +197,16 @@ static void try_shutdown_iosuhax(void)
 __attribute__((weak))
 void __mount_filesystems(void)
 {
-   if(iosuhaxMount)
+#ifdef HAVE_LIBFAT
+   if (iosuhaxMount)
+   {
       fatInitDefault();
-   else
-      mount_sd_fat("sd");
+      fsaFd = IOSUHAX_FSA_Open();
+      mount_fs("storage_usb", fsaFd, NULL, "/vol/storage_usb01");
+      return;
+   } 
+#endif
+   mount_sd_fat("sd");
 }
 
 /**
@@ -209,13 +216,26 @@ void __mount_filesystems(void)
 __attribute__((weak))
 void __unmount_filesystems(void)
 {
-  if (iosuhaxMount)
-  {
-    fatUnmount("sd:");
-    fatUnmount("usb:");
-  }
-  else
-    unmount_sd_fat("sd");
+#ifdef HAVE_LIBFAT
+   if (iosuhaxMount)
+   {
+      fatUnmount("sd:");
+      fatUnmount("usb:");
+
+      IOSUHAX_sdio_disc_interface.shutdown();
+      IOSUHAX_usb_disc_interface.shutdown();
+
+      unmount_fs("storage_usb");
+      IOSUHAX_FSA_Close(fsaFd);
+
+      if (mcp_hook_fd >= 0)
+         MCPHookClose();
+      else
+         IOSUHAX_Close();
+      return;
+   }
+#endif
+   unmount_sd_fat("sd");
 }
 
 static void fsdev_init(void)

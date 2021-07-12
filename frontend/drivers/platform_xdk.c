@@ -99,10 +99,9 @@ static void frontend_xdk_get_environment_settings(int *argc, char *argv[],
 #endif
 
 #if defined(_XBOX1)
-   strlcpy(g_defaults.dirs[DEFAULT_DIR_CORE],
-         "D:", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
-   fill_pathname_join(g_defaults.path.config, g_defaults.dirs[DEFAULT_DIR_CORE],
-         file_path_str(FILE_PATH_MAIN_CONFIG), sizeof(g_defaults.path.config));
+   strcpy_literal(g_defaults.dirs[DEFAULT_DIR_CORE], "D:");
+   fill_pathname_join(g_defaults.path_config, g_defaults.dirs[DEFAULT_DIR_CORE],
+         FILE_PATH_MAIN_CONFIG, sizeof(g_defaults.path_config));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SAVESTATE],
          g_defaults.dirs[DEFAULT_DIR_CORE],
          "savestates",
@@ -123,6 +122,12 @@ static void frontend_xdk_get_environment_settings(int *argc, char *argv[],
          g_defaults.dirs[DEFAULT_DIR_CORE],
          "overlays",
          sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
+#ifdef HAVE_VIDEO_LAYOUT
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT],
+         g_defaults.dirs[DEFAULT_DIR_CORE],
+         "layouts",
+         sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT]));
+#endif
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_ASSETS],
          g_defaults.dirs[DEFAULT_DIR_CORE],
          "media", sizeof(g_defaults.dirs[DEFAULT_DIR_ASSETS]));
@@ -132,26 +137,26 @@ static void frontend_xdk_get_environment_settings(int *argc, char *argv[],
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_PLAYLIST],
          g_defaults.dirs[DEFAULT_DIR_CORE],
          "playlists", sizeof(g_defaults.dirs[DEFAULT_DIR_PLAYLIST]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_LOGS],
+         g_defaults.dirs[DEFAULT_DIR_CORE],
+         "logs", sizeof(g_defaults.dirs[DEFAULT_DIR_LOGS]));
 #elif defined(_XBOX360)
-   strlcpy(g_defaults.dirs[DEFAULT_DIR_CORE],
-         "game:",
-         sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
-   strlcpy(g_defaults.path.config,
-         "game:\\retroarch.cfg", sizeof(g_defaults.path.config));
-   strlcpy(g_defaults.dirs[DEFAULT_DIR_SCREENSHOT],
-         "game:",
-         sizeof(g_defaults.dirs[DEFAULT_DIR_SCREENSHOT]));
-   strlcpy(g_defaults.dirs[DEFAULT_DIR_SAVESTATE],
-         "game:\\savestates",
-         sizeof(g_defaults.dirs[DEFAULT_DIR_SAVESTATE]));
-   strlcpy(g_defaults.dirs[DEFAULT_DIR_PLAYLIST],
-         "game:\\playlists",
-         sizeof(g_defaults.dirs[DEFAULT_DIR_PLAYLIST]));
-   strlcpy(g_defaults.dirs[DEFAULT_DIR_SRAM],
-         "game:\\savefiles",
-         sizeof(g_defaults.dirs[DEFAULT_DIR_SRAM]));
-   strlcpy(g_defaults.dirs[DEFAULT_DIR_SYSTEM],
-         "game:\\system", sizeof(g_defaults.dirs[DEFAULT_DIR_SYSTEM]));
+   strcpy_literal(g_defaults.dirs[DEFAULT_DIR_CORE],
+         "game:");
+   strcpy_literal(g_defaults.path_config,
+         "game:\\retroarch.cfg");
+   strcpy_literal(g_defaults.dirs[DEFAULT_DIR_SCREENSHOT],
+         "game:");
+   strcpy_literal(g_defaults.dirs[DEFAULT_DIR_SAVESTATE],
+         "game:\\savestates");
+   strcpy_literal(g_defaults.dirs[DEFAULT_DIR_PLAYLIST],
+         "game:\\playlists");
+   strcpy_literal(g_defaults.dirs[DEFAULT_DIR_SRAM],
+         "game:\\savefiles");
+   strcpy_literal(g_defaults.dirs[DEFAULT_DIR_SYSTEM],
+         "game:\\system");
+   strcpy_literal(g_defaults.dirs[DEFAULT_DIR_LOGS],
+         "game:\\logs");
 #endif
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO],
          g_defaults.dirs[DEFAULT_DIR_CORE],
@@ -169,7 +174,7 @@ static void frontend_xdk_get_environment_settings(int *argc, char *argv[],
 
       if (
             !string_is_empty(extracted_path)
-            && (strstr(extracted_path, "Pool") == NULL)
+            && (!strstr(extracted_path, "Pool"))
             /* Hack. Unknown problem */)
       {
          /* Auto-start game */
@@ -239,32 +244,37 @@ static void frontend_xdk_init(void *data)
 #endif
 }
 
-static void frontend_xdk_exec(const char *path, bool should_load_game)
+static void frontend_xdk_exec(const char *path, bool should_load_content)
 {
 #ifndef IS_SALAMANDER
    bool original_verbose       = verbosity_is_enabled();
 #endif
 #if defined(_XBOX1)
+#ifndef IS_SALAMANDER
    LAUNCH_DATA ptr;
+#endif
 #elif defined(_XBOX360)
    char game_path[1024]        = {0};
 #endif
-   (void)should_load_game;
 
 #ifdef IS_SALAMANDER
    if (!string_is_empty(path))
+#ifdef _XBOX360
+      XLaunchNewImage(path, 0);
+#else
       XLaunchNewImage(path, NULL);
+#endif
 #else
 #if defined(_XBOX1)
    memset(&ptr, 0, sizeof(ptr));
 
-   if (should_load_game && !path_is_empty(RARCH_PATH_CONTENT))
+   if (should_load_content && !path_is_empty(RARCH_PATH_CONTENT))
       snprintf((char*)ptr.Data, sizeof(ptr.Data), "%s", path_get(RARCH_PATH_CONTENT));
 
    if (!string_is_empty(path))
       XLaunchNewImage(path, !string_is_empty((const char*)ptr.Data) ? &ptr : NULL);
 #elif defined(_XBOX360)
-   if (should_load_game && !path_is_empty(RARCH_PATH_CONTENT))
+   if (should_load_content && !path_is_empty(RARCH_PATH_CONTENT))
    {
       strlcpy(game_path, path_get(RARCH_PATH_CONTENT), sizeof(game_path));
       XSetLaunchData(game_path, MAX_LAUNCH_DATA_SIZE);
@@ -310,9 +320,9 @@ static bool frontend_xdk_set_fork(enum frontend_fork fork_mode)
 }
 #endif
 
-static void frontend_xdk_exitspawn(char *s, size_t len)
+static void frontend_xdk_exitspawn(char *s, size_t len, char *args)
 {
-   bool should_load_game = false;
+   bool should_load_content = false;
 #ifndef IS_SALAMANDER
    if (xdk_fork_mode == FRONTEND_FORK_NONE)
       return;
@@ -320,14 +330,14 @@ static void frontend_xdk_exitspawn(char *s, size_t len)
    switch (xdk_fork_mode)
    {
       case FRONTEND_FORK_CORE_WITH_ARGS:
-         should_load_game = true;
+         should_load_content = true;
          break;
       case FRONTEND_FORK_NONE:
       default:
          break;
    }
 #endif
-   frontend_xdk_exec(s, should_load_game);
+   frontend_xdk_exec(s, should_load_content);
 }
 
 static int frontend_xdk_get_rating(void)
@@ -356,7 +366,7 @@ static int frontend_xdk_parse_drive_list(void *data, bool load_content)
    file_list_t *list = (file_list_t*)data;
    enum msg_hash_enums enum_idx = load_content ?
       MENU_ENUM_LABEL_FILE_DETECT_CORE_LIST_PUSH_DIR :
-      MSG_UNKNOWN;
+      MENU_ENUM_LABEL_FILE_BROWSER_DIRECTORY;
 
 #if defined(_XBOX1)
    menu_entries_append_enum(list,
@@ -427,5 +437,9 @@ frontend_ctx_driver_t frontend_ctx_xdk = {
    NULL,                         /* watch_path_for_changes */
    NULL,                         /* check_for_path_changes */
    NULL,                         /* set_sustained_performance_mode */
+   NULL,                         /* get_cpu_model_name */
+   NULL,                         /* get_user_language */
+   NULL,                         /* is_narrator_running */
+   NULL,                         /* accessibility_speak */
    "xdk",
 };

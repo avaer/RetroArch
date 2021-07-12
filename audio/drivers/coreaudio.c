@@ -15,7 +15,6 @@
  */
 #include <stdlib.h>
 
-
 #if TARGET_OS_IPHONE
 #include <AudioToolbox/AudioToolbox.h>
 #else
@@ -32,28 +31,28 @@
 #include <retro_endianness.h>
 #include <string/stdstring.h>
 
-#include "../audio_driver.h"
+#include "../../retroarch.h"
 #include "../../verbosity.h"
 
 typedef struct coreaudio
 {
    slock_t *lock;
    scond_t *cond;
-
 #if (defined(__MACH__) && (defined(__ppc__) || defined(__ppc64__)))
    ComponentInstance dev;
 #else
    AudioComponentInstance dev;
 #endif
+   fifo_buffer_t *buffer;
+   size_t buffer_size;
    bool dev_alive;
    bool is_paused;
-
-   fifo_buffer_t *buffer;
    bool nonblock;
-   size_t buffer_size;
 } coreaudio_t;
 
+#if TARGET_OS_IOS
 static bool g_interrupted;
+#endif
 
 static void coreaudio_free(void *data)
 {
@@ -102,7 +101,7 @@ static OSStatus audio_write_cb(void *userdata,
 
    slock_lock(dev->lock);
 
-   if (fifo_read_avail(dev->buffer) < write_avail)
+   if (FIFO_READ_AVAIL(dev->buffer) < write_avail)
    {
       *action_flags = kAudioUnitRenderAction_OutputIsSilence;
 
@@ -126,7 +125,9 @@ static OSStatus audio_write_cb(void *userdata,
 static void coreaudio_interrupt_listener(void *data, UInt32 interrupt_state)
 {
     (void)data;
+#if TARGET_OS_IOS
     g_interrupted = (interrupt_state == kAudioSessionBeginInterruption);
+#endif
 }
 #else
 static void choose_output_device(coreaudio_t *dev, const char* device)
@@ -219,7 +220,7 @@ static void *coreaudio_init(const char *device,
    dev->lock = slock_new();
    dev->cond = scond_new();
 
-#if TARGET_OS_IPHONE
+#if TARGET_OS_IOS
    if (!session_initialized)
    {
       session_initialized = true;
@@ -242,7 +243,7 @@ static void *coreaudio_init(const char *device,
 #else
    comp = AudioComponentFindNext(NULL, &desc);
 #endif
-   if (comp == NULL)
+   if (!comp)
       goto error;
 
 #if (defined(__MACH__) && (defined(__ppc__) || defined(__ppc64__)))
@@ -343,20 +344,24 @@ static ssize_t coreaudio_write(void *data, const void *buf_, size_t size)
    const uint8_t *buf = (const uint8_t*)buf_;
    size_t written     = 0;
 
+#if TARGET_OS_IOS
    while (!g_interrupted && size > 0)
+#else
+   while (size > 0)
+#endif
    {
       size_t write_avail;
 
       slock_lock(dev->lock);
 
-      write_avail = fifo_write_avail(dev->buffer);
+      write_avail = FIFO_WRITE_AVAIL(dev->buffer);
       if (write_avail > size)
          write_avail = size;
 
       fifo_write(dev->buffer, buf, write_avail);
-      buf += write_avail;
+      buf     += write_avail;
       written += write_avail;
-      size -= write_avail;
+      size    -= write_avail;
 
       if (dev->nonblock)
       {
@@ -364,7 +369,7 @@ static ssize_t coreaudio_write(void *data, const void *buf_, size_t size)
          break;
       }
 
-#if TARGET_OS_IPHONE
+#if TARGET_OS_IOS
       if (write_avail == 0 && !scond_wait_timeout(
                dev->cond, dev->lock, 3000000))
          g_interrupted = true;
@@ -423,7 +428,7 @@ static size_t coreaudio_write_avail(void *data)
    coreaudio_t *dev = (coreaudio_t*)data;
 
    slock_lock(dev->lock);
-   avail = fifo_write_avail(dev->buffer);
+   avail = FIFO_WRITE_AVAIL(dev->buffer);
    slock_unlock(dev->lock);
 
    return avail;

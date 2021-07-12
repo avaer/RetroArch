@@ -16,12 +16,17 @@ fi
 
 ITEMS=""
 
-CORES_DIR="${PROJECT_DIR}/iOS/modules"
+if [ "$1" = "tvos" ]; then
+    CORES_DIR="${PROJECT_DIR}/tvOS/modules"
+else
+    CORES_DIR="${PROJECT_DIR}/iOS/modules"
+fi
+
 echo "Cores dir: ${CORES_DIR}"
 if [ -d "$CORES_DIR" ] ; then
     CORES=$(find "${CORES_DIR}" -depth -type d -name "*.framework" -or -name "*.dylib" -or -name "*.bundle" | sed -e "s/\(.*framework\)/\1\/Versions\/A\//")
     RESULT=$?
-    if [[ $RESULT != 0 ]] ; then
+    if [ "$RESULT" != 0 ] ; then
         exit 1
     fi
 
@@ -43,7 +48,9 @@ echo "${ITEMS}"
 
 # Change the Internal Field Separator (IFS) so that spaces in paths will not cause problems below.
 SAVED_IFS=$IFS
-IFS=$(echo -en "\n\b")
+# Doing IFS=$(echo -en "\n") does not work on Xcode 10 for some reason
+IFS="
+"
 
 # Loop through all items.
 for ITEM in $ITEMS;
@@ -51,7 +58,7 @@ do
     echo "Signing '${ITEM}'"
     codesign --force --verbose --sign "${CODE_SIGN_IDENTITY_FOR_ITEMS}" "${ITEM}"
     RESULT=$?
-    if [[ $RESULT != 0 ]] ; then
+    if [ "$RESULT" != 0 ] ; then
         echo "Failed to sign '${ITEM}'."
         IFS=$SAVED_IFS
         exit 1

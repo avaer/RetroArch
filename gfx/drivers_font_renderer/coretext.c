@@ -31,6 +31,8 @@
 #include <ApplicationServices/ApplicationServices.h>
 #endif
 
+#include <file/file_path.h>
+
 #include "../font_driver.h"
 
 #define CT_ATLAS_ROWS 16
@@ -50,7 +52,7 @@ typedef struct coretext_renderer
    struct font_atlas atlas;
    coretext_atlas_slot_t atlas_slots[CT_ATLAS_SIZE];
    coretext_atlas_slot_t *uc_map[0x100];
-   CGFloat metrics_height;
+   struct font_line_metrics line_metrics;
 } ct_font_renderer_t;
 
 static struct font_atlas *font_renderer_ct_get_atlas(void *data)
@@ -160,9 +162,19 @@ static bool coretext_font_renderer_create_atlas(CTFontRef face, ct_font_renderer
 
    handle->atlas.width     = max_width * CT_ATLAS_COLS;
    handle->atlas.height    = max_height * CT_ATLAS_ROWS;
-   handle->metrics_height += CTFontGetAscent(face);
-   handle->metrics_height += CTFontGetDescent(face);
-   handle->metrics_height += CTFontGetLeading(face);
+
+   handle->line_metrics.ascender  = (float)CTFontGetAscent(face);
+   handle->line_metrics.descender = (float)CTFontGetDescent(face);
+   /* CTFontGetDescent() should return a positive value,
+    * but I have seen several reports online of the
+    * value being negative
+    * > Since I cannot test this on real hardware, add
+    *   a simple safety check... */
+   handle->line_metrics.descender = (handle->line_metrics.descender < 0.0f) ?
+         (-1.0f * handle->line_metrics.descender) : handle->line_metrics.descender;
+   handle->line_metrics.height    =
+         handle->line_metrics.ascender + handle->line_metrics.descender +
+         (float)CTFontGetLeading(face);
 
    handle->atlas.buffer    = (uint8_t*)
       calloc(handle->atlas.width * handle->atlas.height, 1);
@@ -262,13 +274,14 @@ static void *font_renderer_ct_init(const char *font_path, float font_size)
    ct_font_renderer_t *handle = (ct_font_renderer_t*)
       calloc(1, sizeof(*handle));
 
-   if (!handle)
+   if (!handle || !path_is_valid(font_path))
    {
       err = 1;
       goto error;
    }
 
-   cf_font_path = CFStringCreateWithCString(NULL, font_path, kCFStringEncodingASCII);
+   cf_font_path = CFStringCreateWithCString(
+         NULL, font_path, kCFStringEncodingASCII);
 
    if (!cf_font_path)
    {
@@ -276,10 +289,11 @@ static void *font_renderer_ct_init(const char *font_path, float font_size)
       goto error;
    }
 
-   url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, cf_font_path, kCFURLPOSIXPathStyle, false);
+   url          = CFURLCreateWithFileSystemPath(
+         kCFAllocatorDefault, cf_font_path, kCFURLPOSIXPathStyle, false);
    dataProvider = CGDataProviderCreateWithURL(url);
-   theCGFont = CGFontCreateWithDataProvider(dataProvider);
-   face = CTFontCreateWithGraphicsFont(theCGFont, font_size, NULL, NULL);
+   theCGFont    = CGFontCreateWithDataProvider(dataProvider);
+   face         = CTFontCreateWithGraphicsFont(theCGFont, font_size, NULL, NULL);
 
    if (!face)
    {
@@ -339,12 +353,14 @@ static const char *font_renderer_ct_get_default_font(void)
    return default_font;
 }
 
-static int font_renderer_ct_get_line_height(void *data)
+static bool font_renderer_ct_get_line_metrics(
+      void* data, struct font_line_metrics **metrics)
 {
    ct_font_renderer_t *handle   = (ct_font_renderer_t*)data;
    if (!handle)
-      return 0;
-   return handle->metrics_height;
+      return false;
+   *metrics = &handle->line_metrics;
+   return true;
 }
 
 font_renderer_driver_t coretext_font_renderer = {
@@ -354,5 +370,5 @@ font_renderer_driver_t coretext_font_renderer = {
   font_renderer_ct_free,
   font_renderer_ct_get_default_font,
   "coretext",
-  font_renderer_ct_get_line_height
+  font_renderer_ct_get_line_metrics
 };

@@ -1,6 +1,6 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- *  Copyright (C) 2016-2017 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -27,7 +27,7 @@
 #ifdef RARCH_INTERNAL
 #include "../configuration.h"
 
-int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
+int msg_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
 {
     settings_t *settings = config_get_ptr();
 
@@ -104,6 +104,18 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
              snprintf(s, len,
                    "Toggles onscreen keyboard.");
              break;
+          case RARCH_FPS_TOGGLE:
+             snprintf(s, len,
+                   "Toggles frames per second counter.");
+             break;
+          case RARCH_SEND_DEBUG_INFO:
+             snprintf(s, len,
+                   "Sends diagnostic info about your device and RetroArch configuration to our servers for analysis.");
+             break;
+          case RARCH_NETPLAY_HOST_TOGGLE:
+             snprintf(s, len,
+                   "Toggles netplay hosting on/off.");
+             break;
           case RARCH_NETPLAY_GAME_WATCH:
              snprintf(s, len,
                    "Netplay toggle play/spectate mode.");
@@ -172,6 +184,10 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
              snprintf(s, len,
                    "Toggles fullscreen.");
              break;
+          case RARCH_CLOSE_CONTENT_KEY:
+             snprintf(s, len,
+                   "Closes content.");
+             break;
           case RARCH_QUIT_KEY:
              snprintf(s, len,
                    "Key to exit RetroArch cleanly. \n"
@@ -205,7 +221,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                    " \n"
                    "Rewinding must be enabled.");
              break;
-          case RARCH_MOVIE_RECORD_TOGGLE:
+          case RARCH_BSV_RECORD_TOGGLE:
              snprintf(s, len,
                    "Toggle between recording and not.");
              break;
@@ -271,6 +287,18 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
         case MENU_ENUM_LABEL_SORT_SAVEFILES_ENABLE:
             snprintf(s, len, "Sort save files in folders \n"
                     "named after the libretro core used.");
+            break;
+        case MENU_ENUM_LABEL_SORT_SAVESTATES_BY_CONTENT_ENABLE:
+            snprintf(s, len, "Sort save states in folders named \n"
+                   "after the folder in which the content lives.");
+            break;
+        case MENU_ENUM_LABEL_SORT_SAVEFILES_BY_CONTENT_ENABLE:
+            snprintf(s, len, "Sort save files in folders named \n"
+                  "after the folder in which the content lives.");
+            break;
+        case MENU_ENUM_LABEL_SORT_SCREENSHOTS_BY_CONTENT_ENABLE:
+            snprintf(s, len, "Sort screenshots in folders named \n"
+                  "after the folder in which the content lives.");
             break;
         case MENU_ENUM_LABEL_RESUME_CONTENT:
             snprintf(s, len, "Exits from the menu and returns back \n"
@@ -386,6 +414,16 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "Go back to the parent directory.");
             break;
+        case MENU_ENUM_LABEL_FILE_BROWSER_OPEN_UWP_PERMISSIONS:
+            snprintf(s, len,
+                     "Open Windows permission settings to enable \n"
+                     "the broadFileSystemAccess capability.");
+            break;
+        case MENU_ENUM_LABEL_FILE_BROWSER_OPEN_PICKER:
+           snprintf(s, len,
+                     "Open the system file picker to access \n"
+                     "additional directories.");
+           break;
         case MENU_ENUM_LABEL_FILE_BROWSER_SHADER_PRESET:
             snprintf(s, len,
                      "Shader preset file.");
@@ -567,6 +605,11 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                      "Enables displaying the current frames \n"
                              "per second.");
             break;
+        case MENU_ENUM_LABEL_MEMORY_SHOW:
+            snprintf(s, len,
+                     "Includes displaying the current memory \n"
+                             "usage/total with FPS/Frames.");
+            break;
         case MENU_ENUM_LABEL_VIDEO_FONT_ENABLE:
             snprintf(s, len,
                      "Show and/or hide onscreen messages.");
@@ -604,6 +647,19 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "Overlay opacity.");
             break;
+        case MENU_ENUM_LABEL_VIDEO_LAYOUT_ENABLE:
+            snprintf(s, len,
+                     "Enable or disable the current video layout.");
+            break;
+        case MENU_ENUM_LABEL_VIDEO_LAYOUT_PATH:
+            snprintf(s, len,
+                     "Path to video layout.");
+            break;
+        case MENU_ENUM_LABEL_VIDEO_LAYOUT_SELECTED_VIEW:
+            snprintf(s, len,
+                     "Layouts can contain multiple views. \n"
+                     "Select a view.");
+            break;
         case MENU_ENUM_LABEL_INPUT_BIND_TIMEOUT:
             snprintf(s, len,
                      "Input bind timer timeout (in seconds). \n"
@@ -614,10 +670,6 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                "Input bind hold time (in seconds). \n"
                "Amount of seconds to hold an input to bind it.");
-            break;
-        case MENU_ENUM_LABEL_OVERLAY_SCALE:
-            snprintf(s, len,
-                     "Overlay scale.");
             break;
         case MENU_ENUM_LABEL_AUDIO_OUTPUT_RATE:
             snprintf(s, len,
@@ -692,24 +744,24 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "To scan for content, go to '%s' and\n"
                              "select either '%s' or %s'.\n"
-                             " \n"
+                             "\n"
                              "Files will be compared to database entries.\n"
                              "If there is a match, it will add an entry\n"
-                             "to a collection.\n"
-                             " \n"
+                             "to a playlist.\n"
+                             "\n"
                              "You can then easily access this content by\n"
                              "going to '%s' ->\n"
                              "'%s'\n"
                              "instead of having to go through the\n"
-                             "filebrowser everytime.\n"
-                             " \n"
+                             "file browser every time.\n"
+                             "\n"
                              "NOTE: Content for some cores might still not be\n"
                              "scannable.",
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_ADD_CONTENT_LIST),
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SCAN_DIRECTORY),
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_SCAN_FILE),
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_LOAD_CONTENT_LIST),
-                     msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CONTENT_COLLECTION_LIST)
+                     msg_hash_to_str(MENU_ENUM_LABEL_VALUE_PLAYLISTS_TAB)
             );
             break;
         case MENU_ENUM_LABEL_VALUE_EXTRACTING_PLEASE_WAIT:
@@ -793,83 +845,87 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             );
             break;
         case MENU_ENUM_LABEL_VIDEO_DRIVER:
-            snprintf(s, len,
+            {
+               const char *video_driver = settings->arrays.video_driver;
+
+               snprintf(s, len,
                      "Current Video driver.");
 
-            if (string_is_equal(settings->arrays.video_driver, "gl"))
-            {
-                snprintf(s, len,
-                         "OpenGL Video driver. \n"
-                                 " \n"
-                                 "This driver allows libretro GL cores to  \n"
-                                 "be used in addition to software-rendered \n"
-                                 "core implementations.\n"
-                                 " \n"
-                                 "Performance for software-rendered and \n"
-                                 "libretro GL core implementations is \n"
-                                 "dependent on your graphics card's \n"
-                                 "underlying GL driver).");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "sdl2"))
-            {
-                snprintf(s, len,
-                         "SDL 2 Video driver.\n"
-                                 " \n"
-                                 "This is an SDL 2 software-rendered video \n"
-                                 "driver.\n"
-                                 " \n"
-                                 "Performance for software-rendered libretro \n"
-                                 "core implementations is dependent \n"
-                                 "on your platform SDL implementation.");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "sdl1"))
-            {
-                snprintf(s, len,
-                         "SDL Video driver.\n"
-                                 " \n"
-                                 "This is an SDL 1.2 software-rendered video \n"
-                                 "driver.\n"
-                                 " \n"
-                                 "Performance is considered to be suboptimal. \n"
-                                 "Consider using it only as a last resort.");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "d3d"))
-            {
-                snprintf(s, len,
-                         "Direct3D Video driver. \n"
-                                 " \n"
-                                 "Performance for software-rendered cores \n"
-                                 "is dependent on your graphic card's \n"
-                                 "underlying D3D driver).");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "exynos"))
-            {
-                snprintf(s, len,
-                         "Exynos-G2D Video Driver. \n"
-                                 " \n"
-                                 "This is a low-level Exynos video driver. \n"
-                                 "Uses the G2D block in Samsung Exynos SoC \n"
-                                 "for blit operations. \n"
-                                 " \n"
-                                 "Performance for software rendered cores \n"
-                                 "should be optimal.");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "drm"))
-            {
-                snprintf(s, len,
-                         "Plain DRM Video Driver. \n"
-                                 " \n"
-                                 "This is a low-level video driver using. \n"
-                                 "libdrm for hardware scaling using \n"
-                                 "GPU overlays.");
-            }
-            else if (string_is_equal(settings->arrays.video_driver, "sunxi"))
-            {
-                snprintf(s, len,
-                         "Sunxi-G2D Video Driver. \n"
-                                 " \n"
-                                 "This is a low-level Sunxi video driver. \n"
-                                 "Uses the G2D block in Allwinner SoCs.");
+               if (string_is_equal(video_driver, "gl"))
+               {
+                  snprintf(s, len,
+                        "OpenGL Video driver. \n"
+                        " \n"
+                        "This driver allows libretro GL cores to  \n"
+                        "be used in addition to software-rendered \n"
+                        "core implementations.\n"
+                        " \n"
+                        "Performance for software-rendered and \n"
+                        "libretro GL core implementations is \n"
+                        "dependent on your graphics card's \n"
+                        "underlying GL driver).");
+               }
+               else if (string_is_equal(video_driver, "sdl2"))
+               {
+                  snprintf(s, len,
+                        "SDL 2 Video driver.\n"
+                        " \n"
+                        "This is an SDL 2 software-rendered video \n"
+                        "driver.\n"
+                        " \n"
+                        "Performance for software-rendered libretro \n"
+                        "core implementations is dependent \n"
+                        "on your platform SDL implementation.");
+               }
+               else if (string_is_equal(video_driver, "sdl1"))
+               {
+                  snprintf(s, len,
+                        "SDL Video driver.\n"
+                        " \n"
+                        "This is an SDL 1.2 software-rendered video \n"
+                        "driver.\n"
+                        " \n"
+                        "Performance is considered to be suboptimal. \n"
+                        "Consider using it only as a last resort.");
+               }
+               else if (string_is_equal(video_driver, "d3d"))
+               {
+                  snprintf(s, len,
+                        "Direct3D Video driver. \n"
+                        " \n"
+                        "Performance for software-rendered cores \n"
+                        "is dependent on your graphic card's \n"
+                        "underlying D3D driver).");
+               }
+               else if (string_is_equal(video_driver, "exynos"))
+               {
+                  snprintf(s, len,
+                        "Exynos-G2D Video Driver. \n"
+                        " \n"
+                        "This is a low-level Exynos video driver. \n"
+                        "Uses the G2D block in Samsung Exynos SoC \n"
+                        "for blit operations. \n"
+                        " \n"
+                        "Performance for software rendered cores \n"
+                        "should be optimal.");
+               }
+               else if (string_is_equal(video_driver, "drm"))
+               {
+                  snprintf(s, len,
+                        "Plain DRM Video Driver. \n"
+                        " \n"
+                        "This is a low-level video driver using. \n"
+                        "libdrm for hardware scaling using \n"
+                        "GPU overlays.");
+               }
+               else if (string_is_equal(video_driver, "sunxi"))
+               {
+                  snprintf(s, len,
+                        "Sunxi-G2D Video Driver. \n"
+                        " \n"
+                        "This is a low-level Sunxi video driver. \n"
+                        "Uses the G2D block in Allwinner SoCs.");
+               }
             }
             break;
         case MENU_ENUM_LABEL_AUDIO_DSP_PLUGIN:
@@ -895,13 +951,13 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                   strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NO_INFORMATION_AVAILABLE), len);
             }
             break;
-			
-		case MENU_ENUM_LABEL_CRT_SWITCH_RESOLUTION: snprintf(s, len, "SET CRT"); 
+
+		case MENU_ENUM_LABEL_CRT_SWITCH_RESOLUTION: snprintf(s, len, "SET CRT");
 			break;
-			
-		case MENU_ENUM_LABEL_CRT_SWITCH_RESOLUTION_SUPER: snprintf(s, len, "SET CRT SUPER"); 
+
+		case MENU_ENUM_LABEL_CRT_SWITCH_RESOLUTION_SUPER: snprintf(s, len, "SET CRT SUPER");
 			break;
-			
+
         case MENU_ENUM_LABEL_VIDEO_SHADER_PRESET:
             snprintf(s, len,
                      "Load Shader Preset. \n"
@@ -1181,6 +1237,14 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                              "This will take a performance hit, \n"
                              "so it is disabled by default.");
             break;
+        case MENU_ENUM_LABEL_CHEAT_APPLY_AFTER_TOGGLE:
+            snprintf(s, len,
+                     "Apply cheat immediately after toggling.");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_APPLY_AFTER_LOAD:
+            snprintf(s, len,
+                     "Auto-apply cheats when game loads.");
+            break;
         case MENU_ENUM_LABEL_LIBRETRO_DIR_PATH:
             snprintf(s, len,
                      "Core Directory. \n"
@@ -1233,7 +1297,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             break;
         case MENU_ENUM_LABEL_FASTFORWARD_RATIO:
             snprintf(s, len,
-                     "Fastforward ratio."
+                     "Fastforward ratio.\n"
                              " \n"
                              "The maximum rate at which content will\n"
                              "be run when using fast forward.\n"
@@ -1245,6 +1309,15 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                              "the maximum rate will not be exceeded.\n"
                              "Do not rely on this cap to be perfectly \n"
                              "accurate.");
+            break;
+        case MENU_ENUM_LABEL_VRR_RUNLOOP_ENABLE:
+            snprintf(s, len,
+                     "Sync to Exact Content Framerate.\n"
+                             " \n"
+                             "This option is the equivalent of forcing x1 speed\n"
+                             "while still allowing fast forward.\n"
+                             "No deviation from the core requested refresh rate,\n"
+                             "no sound Dynamic Rate Control.");
             break;
         case MENU_ENUM_LABEL_VIDEO_MONITOR_INDEX:
             snprintf(s, len,
@@ -1386,6 +1459,22 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                              "at a time, increasing the rewinding \n"
                              "speed.");
             break;
+        case MENU_ENUM_LABEL_REWIND_BUFFER_SIZE:
+            snprintf(s, len,
+                     "Rewind buffer size (MB).\n"
+                             " \n"
+                             " The amount of memory in MB to reserve \n"
+                             "for rewinding.  Increasing this value \n"
+                             "increases the rewind history length.\n");
+            break;
+        case MENU_ENUM_LABEL_REWIND_BUFFER_SIZE_STEP:
+            snprintf(s, len,
+                     "Rewind buffer size step (MB).\n"
+                             " \n"
+                             " Each time you increase or decrease \n"
+                             "the rewind buffer size value via this \n"
+                             "UI it will change by this amount.\n");
+            break;
         case MENU_ENUM_LABEL_SCREENSHOT:
             snprintf(s, len,
                      "Take screenshot.");
@@ -1399,6 +1488,14 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                              "higher risk of stuttering.\n"
                              " \n"
                              "Maximum is 15.");
+            break;
+        case MENU_ENUM_LABEL_VIDEO_SHADER_DELAY:
+            snprintf(s, len,
+                     "Sets by how many milliseconds auto-loading shaders\n"
+                             "are delayed.\n"
+                             "\n"
+                             "Can work around graphical glitches due to using\n"
+                             "'screen grabbing' software like streaming software.");
             break;
         case MENU_ENUM_LABEL_VIDEO_HARD_SYNC_FRAMES:
             snprintf(s, len,
@@ -1512,9 +1609,9 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                              "When slowmotion, content will slow\n"
                              "down by factor.");
             break;
-        case MENU_ENUM_LABEL_INPUT_AXIS_THRESHOLD:
+        case MENU_ENUM_LABEL_INPUT_BUTTON_AXIS_THRESHOLD:
             snprintf(s, len,
-                     "Defines axis threshold.\n"
+                     "Defines the axis threshold.\n"
                              " \n"
                              "How far an axis must be tilted to result\n"
                              "in a button press.\n"
@@ -1529,6 +1626,20 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                              " \n"
                              "Numbers are described in frames."
             );
+            break;
+        case MENU_ENUM_LABEL_INPUT_TURBO_MODE:
+            snprintf(s, len,
+                  "Turbo Mode.\n"
+                  " \n"
+                  "Selects the general behavior of turbo mode."
+                  );
+            break;
+        case MENU_ENUM_LABEL_INPUT_TURBO_DEFAULT_BUTTON:
+            snprintf(s, len,
+                  "Turbo Default Button.\n"
+                  " \n"
+                  "Default active button for Turbo Mode 'Single Button'.\n"
+                  );
             break;
         case MENU_ENUM_LABEL_INPUT_DUTY_CYCLE:
             snprintf(s, len,
@@ -1701,10 +1812,23 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                      "Smoothens picture with bilinear filtering. \n"
                              "Should be disabled if using shaders.");
             break;
+      case MENU_ENUM_LABEL_VIDEO_CTX_SCALING:
+         snprintf(s, len,
+#ifdef HAVE_ODROIDGO2
+               "RGA scaling and bicubic filtering. May break widgets."
+#else
+               "Hardware context scaling (if available)."
+#endif
+         );
+         break;
         case MENU_ENUM_LABEL_TIMEDATE_ENABLE:
             snprintf(s, len,
                      "Shows current date and/or time inside menu.");
             break;
+        case MENU_ENUM_LABEL_TIMEDATE_STYLE:
+           snprintf(s, len,
+              "Style to show the current date and/or time in.");
+           break;
         case MENU_ENUM_LABEL_BATTERY_LEVEL_ENABLE:
             snprintf(s, len,
                      "Shows current battery level inside menu.");
@@ -1759,6 +1883,13 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                      "Overlay Directory. \n"
                              " \n"
                              "Defines a directory where overlays are \n"
+                             "kept for easy access.");
+            break;
+        case MENU_ENUM_LABEL_VIDEO_LAYOUT_DIRECTORY:
+            snprintf(s, len,
+                     "Video Layout Directory. \n"
+                             " \n"
+                             "Defines a directory where video layouts are \n"
                              "kept for easy access.");
             break;
         case MENU_ENUM_LABEL_INPUT_MAX_USERS:
@@ -1929,6 +2060,103 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "Toggle cheat index.\n");
             break;
+        case MENU_ENUM_LABEL_CHEAT_IDX:
+            snprintf(s, len,
+                     "Index position in list.\n");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_ADDRESS_BIT_POSITION:
+            snprintf(s, len,
+                     "Address bitmask when Memory Search Size < 8-bit.\n");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_REPEAT_COUNT:
+            snprintf(s, len,
+                     "The number of times the cheat will be applied.\nUse with the other two Iteration options to affect large areas of memory.");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_REPEAT_ADD_TO_ADDRESS:
+            snprintf(s, len,
+                     "After each 'Number of Iterations' the Memory Address will be increased by this number times the 'Memory Search Size'.");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_REPEAT_ADD_TO_VALUE:
+            snprintf(s, len,
+                     "After each 'Number of Iterations' the Value will be increased by this amount.");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_MATCH_IDX:
+            snprintf(s, len,
+                     "Select the match to view.");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_START_OR_CONT:
+            snprintf(s, len,
+                     "Scan memory to create new cheats");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_START_OR_RESTART:
+            snprintf(s, len,
+                     "Left/Right to change bit-size\n");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_SEARCH_EXACT:
+            snprintf(s, len,
+                     "Left/Right to change value\n");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_SEARCH_LT:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_SEARCH_GT:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_SEARCH_EQ:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_SEARCH_NEQ:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_SEARCH_EQPLUS:
+            snprintf(s, len,
+                     "Left/Right to change value\n");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_SEARCH_EQMINUS:
+            snprintf(s, len,
+                     "Left/Right to change value\n");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_ADD_MATCHES:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_VIEW_MATCHES:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_CREATE_OPTION:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_DELETE_OPTION:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_ADD_NEW_TOP:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_RELOAD_CHEATS:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_ADD_NEW_BOTTOM:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_DELETE_ALL:
+            snprintf(s, len,
+                     " ");
+            break;
+        case MENU_ENUM_LABEL_CHEAT_BIG_ENDIAN:
+            snprintf(s, len,
+                     "Big endian    : 258 = 0x0102\n"
+                     "Little endian : 258 = 0x0201");
+            break;
         case MENU_ENUM_LABEL_HOLD_FAST_FORWARD:
             snprintf(s, len,
                      "Hold for fast-forward. Releasing button \n"
@@ -1942,7 +2170,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "Frame advance when content is paused.");
             break;
-        case MENU_ENUM_LABEL_MOVIE_RECORD_TOGGLE:
+        case MENU_ENUM_LABEL_BSV_RECORD_TOGGLE:
             snprintf(s, len,
                      "Toggle between recording and not.");
             break;

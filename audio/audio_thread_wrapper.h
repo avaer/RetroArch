@@ -19,7 +19,7 @@
 
 #include <boolean.h>
 
-#include "audio_driver.h"
+#include "../retroarch.h"
 
 /**
  * audio_init_thread:
@@ -43,4 +43,3 @@ bool audio_init_thread(const audio_driver_t **out_driver, void **out_data,
       const audio_driver_t *driver);
 
 #endif
-

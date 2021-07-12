@@ -1,4 +1,4 @@
-/* Copyright  (C) 2016-2018 The RetroArch team
+/* Copyright  (C) 2016-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (net_natt.c).
@@ -91,10 +91,7 @@ bool natt_new(struct natt_status *status)
    return true;
 }
 
-void natt_free(struct natt_status *status)
-{
-   /* Nothing */
-}
+void natt_free(struct natt_status *status) { }
 
 static bool natt_open_port(struct natt_status *status,
       struct sockaddr *addr, socklen_t addrlen, enum socket_protocol proto)
@@ -184,7 +181,7 @@ static bool natt_open_port(struct natt_status *status,
 bool natt_open_port_any(struct natt_status *status,
       uint16_t port, enum socket_protocol proto)
 {
-#if !defined(HAVE_SOCKET_LEGACY) && !defined(WIIU)
+#if !defined(HAVE_SOCKET_LEGACY) && (!defined(SWITCH) || defined(SWITCH) && defined(HAVE_LIBNX))
    size_t i;
    char port_str[6];
    struct net_ifinfo list;
@@ -203,7 +200,7 @@ bool natt_open_port_any(struct natt_status *status,
       struct net_ifinfo_entry *entry = list.entries + i;
 
       /* ignore localhost */
-      if (  string_is_equal(entry->host, "127.0.0.1") || 
+      if (  string_is_equal(entry->host, "127.0.0.1") ||
             string_is_equal(entry->host, "::1"))
          continue;
 
@@ -233,7 +230,7 @@ bool natt_read(struct natt_status *status)
 }
 
 #if 0
-/* If we want to remove redirects in the future, this is a 
+/* If we want to remove redirects in the future, this is a
  * sample of how to do that. */
 
 void upnp_rem_redir (int port)

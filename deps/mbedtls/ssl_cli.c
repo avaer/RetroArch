@@ -27,31 +27,18 @@
 
 #if defined(MBEDTLS_SSL_CLI_C)
 
-#if defined(MBEDTLS_PLATFORM_C)
-#include "mbedtls/platform.h"
-#else
+#include <stdint.h>
 #include <stdlib.h>
-#define mbedtls_calloc    calloc
-#define mbedtls_free      free
-#endif
+#include <string.h>
 
 #include "mbedtls/debug.h"
 #include "mbedtls/ssl.h"
 #include "mbedtls/ssl_internal.h"
 
-#include <string.h>
-
-#include <stdint.h>
-
-#if defined(MBEDTLS_HAVE_TIME)
-#include "mbedtls/platform_time.h"
-#endif
+#include <time.h>
 
 #if defined(MBEDTLS_SSL_SESSION_TICKETS)
-/* Implementation that should never be optimized out by the compiler */
-static void mbedtls_zeroize( void *v, size_t n ) {
-    volatile unsigned char *p = v; while( n-- ) *p++ = 0;
-}
+#include "arc4_alt.h"
 #endif
 
 #if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION)
@@ -117,7 +104,7 @@ static void ssl_write_hostname_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_SERVER_NAME_INDICATION */
 
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
-static void ssl_write_renegotiation_ext( mbedtls_ssl_context *ssl,
+static void ssl_cli_write_renegotiation_ext( mbedtls_ssl_context *ssl,
                                          unsigned char *buf,
                                          size_t *olen )
 {
@@ -243,7 +230,7 @@ static void ssl_write_signature_algorithms_ext( mbedtls_ssl_context *ssl,
 
 #if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) || \
     defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
-static void ssl_write_supported_elliptic_curves_ext( mbedtls_ssl_context *ssl,
+static void ssl_cli_write_supported_elliptic_curves_ext( mbedtls_ssl_context *ssl,
                                                      unsigned char *buf,
                                                      size_t *olen )
 {
@@ -316,7 +303,7 @@ static void ssl_write_supported_elliptic_curves_ext( mbedtls_ssl_context *ssl,
     *olen = 6 + elliptic_curve_len;
 }
 
-static void ssl_write_supported_point_formats_ext( mbedtls_ssl_context *ssl,
+static void ssl_cli_write_supported_point_formats_ext( mbedtls_ssl_context *ssl,
                                                    unsigned char *buf,
                                                    size_t *olen )
 {
@@ -393,7 +380,7 @@ static void ssl_write_ecjpake_kkpp_ext( mbedtls_ssl_context *ssl,
             return;
         }
 
-        ssl->handshake->ecjpake_cache = mbedtls_calloc( 1, kkpp_len );
+        ssl->handshake->ecjpake_cache = calloc( 1, kkpp_len );
         if( ssl->handshake->ecjpake_cache == NULL )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "allocation failed" ) );
@@ -426,7 +413,7 @@ static void ssl_write_ecjpake_kkpp_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
 
 #if defined(MBEDTLS_SSL_MAX_FRAGMENT_LENGTH)
-static void ssl_write_max_fragment_length_ext( mbedtls_ssl_context *ssl,
+static void ssl_cli_write_max_fragment_length_ext( mbedtls_ssl_context *ssl,
                                                unsigned char *buf,
                                                size_t *olen )
 {
@@ -460,7 +447,7 @@ static void ssl_write_max_fragment_length_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_MAX_FRAGMENT_LENGTH */
 
 #if defined(MBEDTLS_SSL_TRUNCATED_HMAC)
-static void ssl_write_truncated_hmac_ext( mbedtls_ssl_context *ssl,
+static void ssl_cli_write_truncated_hmac_ext( mbedtls_ssl_context *ssl,
                                           unsigned char *buf, size_t *olen )
 {
     unsigned char *p = buf;
@@ -492,7 +479,7 @@ static void ssl_write_truncated_hmac_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_TRUNCATED_HMAC */
 
 #if defined(MBEDTLS_SSL_ENCRYPT_THEN_MAC)
-static void ssl_write_encrypt_then_mac_ext( mbedtls_ssl_context *ssl,
+static void ssl_cli_write_encrypt_then_mac_ext( mbedtls_ssl_context *ssl,
                                        unsigned char *buf, size_t *olen )
 {
     unsigned char *p = buf;
@@ -526,7 +513,7 @@ static void ssl_write_encrypt_then_mac_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_ENCRYPT_THEN_MAC */
 
 #if defined(MBEDTLS_SSL_EXTENDED_MASTER_SECRET)
-static void ssl_write_extended_ms_ext( mbedtls_ssl_context *ssl,
+static void ssl_cli_write_extended_ms_ext( mbedtls_ssl_context *ssl,
                                        unsigned char *buf, size_t *olen )
 {
     unsigned char *p = buf;
@@ -560,7 +547,7 @@ static void ssl_write_extended_ms_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_EXTENDED_MASTER_SECRET */
 
 #if defined(MBEDTLS_SSL_SESSION_TICKETS)
-static void ssl_write_session_ticket_ext( mbedtls_ssl_context *ssl,
+static void ssl_cli_write_session_ticket_ext( mbedtls_ssl_context *ssl,
                                           unsigned char *buf, size_t *olen )
 {
     unsigned char *p = buf;
@@ -604,7 +591,7 @@ static void ssl_write_session_ticket_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_SESSION_TICKETS */
 
 #if defined(MBEDTLS_SSL_ALPN)
-static void ssl_write_alpn_ext( mbedtls_ssl_context *ssl,
+static void ssl_cli_write_alpn_ext( mbedtls_ssl_context *ssl,
                                 unsigned char *buf, size_t *olen )
 {
     unsigned char *p = buf;
@@ -670,9 +657,7 @@ static int ssl_generate_random( mbedtls_ssl_context *ssl )
 {
     int ret;
     unsigned char *p = ssl->handshake->randbytes;
-#if defined(MBEDTLS_HAVE_TIME)
-    mbedtls_time_t t;
-#endif
+    time_t t;
 
     /*
      * When responding to a verify request, MUST reuse random (RFC 6347 4.2.1)
@@ -680,25 +665,16 @@ static int ssl_generate_random( mbedtls_ssl_context *ssl )
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
     if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM &&
         ssl->handshake->verify_cookie != NULL )
-    {
         return( 0 );
-    }
 #endif
 
-#if defined(MBEDTLS_HAVE_TIME)
-    t = mbedtls_time( NULL );
+    t    = time( NULL );
     *p++ = (unsigned char)( t >> 24 );
     *p++ = (unsigned char)( t >> 16 );
     *p++ = (unsigned char)( t >>  8 );
     *p++ = (unsigned char)( t       );
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, current time: %lu", t ) );
-#else
-    if( ( ret = ssl->conf->f_rng( ssl->conf->p_rng, p, 4 ) ) != 0 )
-        return( ret );
-
-    p += 4;
-#endif /* MBEDTLS_HAVE_TIME */
 
     if( ( ret = ssl->conf->f_rng( ssl->conf->p_rng, p, 28 ) ) != 0 )
         return( ret );
@@ -919,11 +895,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, got %d ciphersuites", n ) );
 
-#if defined(MBEDTLS_ZLIB_SUPPORT)
-    offer_compress = 1;
-#else
     offer_compress = 0;
-#endif
 
     /*
      * We don't support compression with DTLS right now: is many records come
@@ -956,15 +928,14 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
         *p++ = MBEDTLS_SSL_COMPRESS_NULL;
     }
 
-    // First write extensions, then the total length
-    //
+    /* First write extensions, then the total length */
 #if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION)
     ssl_write_hostname_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
 
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
-    ssl_write_renegotiation_ext( ssl, p + 2 + ext_len, &olen );
+    ssl_cli_write_renegotiation_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
 
@@ -976,10 +947,10 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
 
 #if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) || \
     defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
-    ssl_write_supported_elliptic_curves_ext( ssl, p + 2 + ext_len, &olen );
+    ssl_cli_write_supported_elliptic_curves_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 
-    ssl_write_supported_point_formats_ext( ssl, p + 2 + ext_len, &olen );
+    ssl_cli_write_supported_point_formats_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
 
@@ -989,32 +960,32 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
 #endif
 
 #if defined(MBEDTLS_SSL_MAX_FRAGMENT_LENGTH)
-    ssl_write_max_fragment_length_ext( ssl, p + 2 + ext_len, &olen );
+    ssl_cli_write_max_fragment_length_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
 
 #if defined(MBEDTLS_SSL_TRUNCATED_HMAC)
-    ssl_write_truncated_hmac_ext( ssl, p + 2 + ext_len, &olen );
+    ssl_cli_write_truncated_hmac_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
 
 #if defined(MBEDTLS_SSL_ENCRYPT_THEN_MAC)
-    ssl_write_encrypt_then_mac_ext( ssl, p + 2 + ext_len, &olen );
+    ssl_cli_write_encrypt_then_mac_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
 
 #if defined(MBEDTLS_SSL_EXTENDED_MASTER_SECRET)
-    ssl_write_extended_ms_ext( ssl, p + 2 + ext_len, &olen );
+    ssl_cli_write_extended_ms_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
 
 #if defined(MBEDTLS_SSL_ALPN)
-    ssl_write_alpn_ext( ssl, p + 2 + ext_len, &olen );
+    ssl_cli_write_alpn_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
 
 #if defined(MBEDTLS_SSL_SESSION_TICKETS)
-    ssl_write_session_ticket_ext( ssl, p + 2 + ext_len, &olen );
+    ssl_cli_write_session_ticket_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
 
@@ -1053,69 +1024,14 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     return( 0 );
 }
 
-static int ssl_parse_renegotiation_info( mbedtls_ssl_context *ssl,
-                                         const unsigned char *buf,
-                                         size_t len )
-{
-#if defined(MBEDTLS_SSL_RENEGOTIATION)
-    if( ssl->renego_status != MBEDTLS_SSL_INITIAL_HANDSHAKE )
-    {
-        /* Check verify-data in constant-time. The length OTOH is no secret */
-        if( len    != 1 + ssl->verify_data_len * 2 ||
-            buf[0] !=     ssl->verify_data_len * 2 ||
-            mbedtls_ssl_safer_memcmp( buf + 1,
-                          ssl->own_verify_data, ssl->verify_data_len ) != 0 ||
-            mbedtls_ssl_safer_memcmp( buf + 1 + ssl->verify_data_len,
-                          ssl->peer_verify_data, ssl->verify_data_len ) != 0 )
-        {
-            MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-matching renegotiation info" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
-            return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
-        }
-    }
-    else
-#endif /* MBEDTLS_SSL_RENEGOTIATION */
-    {
-        if( len != 1 || buf[0] != 0x00 )
-        {
-            MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-zero length renegotiation info" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
-            return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
-        }
-
-        ssl->secure_renegotiation = MBEDTLS_SSL_SECURE_RENEGOTIATION;
-    }
-
-    return( 0 );
-}
+#include "ssl_parse_renegotiation_info.h"
 
 #if defined(MBEDTLS_SSL_MAX_FRAGMENT_LENGTH)
-static int ssl_parse_max_fragment_length_ext( mbedtls_ssl_context *ssl,
-                                              const unsigned char *buf,
-                                              size_t len )
-{
-    /*
-     * server should use the extension only if we did,
-     * and if so the server's value should match ours (and len is always 1)
-     */
-    if( ssl->conf->mfl_code == MBEDTLS_SSL_MAX_FRAG_LEN_NONE ||
-        len != 1 ||
-        buf[0] != ssl->conf->mfl_code )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-matching max fragment length extension" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
-        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
-    }
-
-    return( 0 );
-}
+#include "ssl_parse_max_fragment_length_ext.h"
 #endif /* MBEDTLS_SSL_MAX_FRAGMENT_LENGTH */
 
 #if defined(MBEDTLS_SSL_TRUNCATED_HMAC)
-static int ssl_parse_truncated_hmac_ext( mbedtls_ssl_context *ssl,
+static int ssl_cli_parse_truncated_hmac_ext( mbedtls_ssl_context *ssl,
                                          const unsigned char *buf,
                                          size_t len )
 {
@@ -1137,7 +1053,7 @@ static int ssl_parse_truncated_hmac_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_TRUNCATED_HMAC */
 
 #if defined(MBEDTLS_SSL_ENCRYPT_THEN_MAC)
-static int ssl_parse_encrypt_then_mac_ext( mbedtls_ssl_context *ssl,
+static int ssl_cli_parse_encrypt_then_mac_ext( mbedtls_ssl_context *ssl,
                                          const unsigned char *buf,
                                          size_t len )
 {
@@ -1160,7 +1076,7 @@ static int ssl_parse_encrypt_then_mac_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_ENCRYPT_THEN_MAC */
 
 #if defined(MBEDTLS_SSL_EXTENDED_MASTER_SECRET)
-static int ssl_parse_extended_ms_ext( mbedtls_ssl_context *ssl,
+static int ssl_cli_parse_extended_ms_ext( mbedtls_ssl_context *ssl,
                                          const unsigned char *buf,
                                          size_t len )
 {
@@ -1183,7 +1099,7 @@ static int ssl_parse_extended_ms_ext( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_SSL_EXTENDED_MASTER_SECRET */
 
 #if defined(MBEDTLS_SSL_SESSION_TICKETS)
-static int ssl_parse_session_ticket_ext( mbedtls_ssl_context *ssl,
+static int ssl_cli_parse_session_ticket_ext( mbedtls_ssl_context *ssl,
                                          const unsigned char *buf,
                                          size_t len )
 {
@@ -1265,7 +1181,7 @@ static int ssl_parse_ecjpake_kkpp( mbedtls_ssl_context *ssl,
     }
 
     /* If we got here, we no longer need our cached extension */
-    mbedtls_free( ssl->handshake->ecjpake_cache );
+    free( ssl->handshake->ecjpake_cache );
     ssl->handshake->ecjpake_cache = NULL;
     ssl->handshake->ecjpake_cache_len = 0;
 
@@ -1283,7 +1199,7 @@ static int ssl_parse_ecjpake_kkpp( mbedtls_ssl_context *ssl,
 #endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
 
 #if defined(MBEDTLS_SSL_ALPN)
-static int ssl_parse_alpn_ext( mbedtls_ssl_context *ssl,
+static int ssl_cli_parse_alpn_ext( mbedtls_ssl_context *ssl,
                                const unsigned char *buf, size_t len )
 {
     size_t list_len, name_len;
@@ -1401,9 +1317,9 @@ static int ssl_parse_hello_verify_request( mbedtls_ssl_context *ssl )
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
-    mbedtls_free( ssl->handshake->verify_cookie );
+    free( ssl->handshake->verify_cookie );
 
-    ssl->handshake->verify_cookie = mbedtls_calloc( 1, cookie_len );
+    ssl->handshake->verify_cookie = (unsigned char*)calloc( 1, cookie_len );
     if( ssl->handshake->verify_cookie  == NULL )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "alloc failed (%d bytes)", cookie_len ) );
@@ -1432,17 +1348,11 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     size_t ext_len;
     unsigned char *buf, *ext;
     unsigned char comp;
-#if defined(MBEDTLS_ZLIB_SUPPORT)
-    int accept_comp;
-#endif
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
     int renegotiation_info_seen = 0;
 #endif
     int handshake_failure = 0;
     const mbedtls_ssl_ciphersuite_t *suite_info;
-#if defined(MBEDTLS_DEBUG_C)
-    uint32_t t;
-#endif
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse server hello" ) );
 
@@ -1495,7 +1405,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
         else
         {
             /* We made it through the verification process */
-            mbedtls_free( ssl->handshake->verify_cookie );
+            free( ssl->handshake->verify_cookie );
             ssl->handshake->verify_cookie = NULL;
             ssl->handshake->verify_cookie_len = 0;
         }
@@ -1545,14 +1455,6 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
         return( MBEDTLS_ERR_SSL_BAD_HS_PROTOCOL_VERSION );
     }
 
-#if defined(MBEDTLS_DEBUG_C)
-    t = ( (uint32_t) buf[2] << 24 )
-      | ( (uint32_t) buf[3] << 16 )
-      | ( (uint32_t) buf[4] <<  8 )
-      | ( (uint32_t) buf[5]       );
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, current time: %lu", t ) );
-#endif
-
     memcpy( ssl->handshake->randbytes + 32, buf + 2, 32 );
 
     n = buf[34];
@@ -1601,20 +1503,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
      */
     comp = buf[37 + n];
 
-#if defined(MBEDTLS_ZLIB_SUPPORT)
-    /* See comments in ssl_write_client_hello() */
-#if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM )
-        accept_comp = 0;
-    else
-#endif
-        accept_comp = 1;
-
-    if( comp != MBEDTLS_SSL_COMPRESS_NULL &&
-        ( comp != MBEDTLS_SSL_COMPRESS_DEFLATE || accept_comp == 0 ) )
-#else /* MBEDTLS_ZLIB_SUPPORT */
     if( comp != MBEDTLS_SSL_COMPRESS_NULL )
-#endif/* MBEDTLS_ZLIB_SUPPORT */
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "server hello, bad compression: %d", comp ) );
         mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
@@ -1647,19 +1536,17 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
         ssl->renego_status != MBEDTLS_SSL_INITIAL_HANDSHAKE ||
 #endif
-        ssl->session_negotiate->ciphersuite != i ||
+        ssl->session_negotiate->ciphersuite != i    ||
         ssl->session_negotiate->compression != comp ||
-        ssl->session_negotiate->id_len != n ||
+        ssl->session_negotiate->id_len      != n    ||
         memcmp( ssl->session_negotiate->id, buf + 35, n ) != 0 )
     {
         ssl->state++;
-        ssl->handshake->resume = 0;
-#if defined(MBEDTLS_HAVE_TIME)
-        ssl->session_negotiate->start = mbedtls_time( NULL );
-#endif
+        ssl->handshake->resume              = 0;
+        ssl->session_negotiate->start       = time( NULL );
         ssl->session_negotiate->ciphersuite = i;
         ssl->session_negotiate->compression = comp;
-        ssl->session_negotiate->id_len = n;
+        ssl->session_negotiate->id_len      = n;
         memcpy( ssl->session_negotiate->id, buf + 35, n );
     }
     else
@@ -1716,9 +1603,6 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     }
 
     if( comp != MBEDTLS_SSL_COMPRESS_NULL
-#if defined(MBEDTLS_ZLIB_SUPPORT)
-        && comp != MBEDTLS_SSL_COMPRESS_DEFLATE
-#endif
       )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
@@ -1778,7 +1662,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
         case MBEDTLS_TLS_EXT_TRUNCATED_HMAC:
             MBEDTLS_SSL_DEBUG_MSG( 3, ( "found truncated_hmac extension" ) );
 
-            if( ( ret = ssl_parse_truncated_hmac_ext( ssl,
+            if( ( ret = ssl_cli_parse_truncated_hmac_ext( ssl,
                             ext + 4, ext_size ) ) != 0 )
             {
                 return( ret );
@@ -1791,7 +1675,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
         case MBEDTLS_TLS_EXT_ENCRYPT_THEN_MAC:
             MBEDTLS_SSL_DEBUG_MSG( 3, ( "found encrypt_then_mac extension" ) );
 
-            if( ( ret = ssl_parse_encrypt_then_mac_ext( ssl,
+            if( ( ret = ssl_cli_parse_encrypt_then_mac_ext( ssl,
                             ext + 4, ext_size ) ) != 0 )
             {
                 return( ret );
@@ -1804,7 +1688,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
         case MBEDTLS_TLS_EXT_EXTENDED_MASTER_SECRET:
             MBEDTLS_SSL_DEBUG_MSG( 3, ( "found extended_master_secret extension" ) );
 
-            if( ( ret = ssl_parse_extended_ms_ext( ssl,
+            if( ( ret = ssl_cli_parse_extended_ms_ext( ssl,
                             ext + 4, ext_size ) ) != 0 )
             {
                 return( ret );
@@ -1817,7 +1701,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
         case MBEDTLS_TLS_EXT_SESSION_TICKET:
             MBEDTLS_SSL_DEBUG_MSG( 3, ( "found session_ticket extension" ) );
 
-            if( ( ret = ssl_parse_session_ticket_ext( ssl,
+            if( ( ret = ssl_cli_parse_session_ticket_ext( ssl,
                             ext + 4, ext_size ) ) != 0 )
             {
                 return( ret );
@@ -1858,7 +1742,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
         case MBEDTLS_TLS_EXT_ALPN:
             MBEDTLS_SSL_DEBUG_MSG( 3, ( "found alpn extension" ) );
 
-            if( ( ret = ssl_parse_alpn_ext( ssl, ext + 4, ext_size ) ) != 0 )
+            if( ( ret = ssl_cli_parse_alpn_ext( ssl, ext + 4, ext_size ) ) != 0 )
                 return( ret );
 
             break;
@@ -2215,7 +2099,7 @@ static int ssl_parse_signature_algorithm( mbedtls_ssl_context *ssl,
 
 #if defined(MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED) || \
     defined(MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED)
-static int ssl_get_ecdh_params_from_cert( mbedtls_ssl_context *ssl )
+static int ssl_cli_get_ecdh_params_from_cert( mbedtls_ssl_context *ssl )
 {
     int ret;
     const mbedtls_ecp_keypair *peer_key;
@@ -2278,9 +2162,9 @@ static int ssl_parse_server_key_exchange( mbedtls_ssl_context *ssl )
     if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDH_RSA ||
         ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA )
     {
-        if( ( ret = ssl_get_ecdh_params_from_cert( ssl ) ) != 0 )
+        if( ( ret = ssl_cli_get_ecdh_params_from_cert( ssl ) ) != 0 )
         {
-            MBEDTLS_SSL_DEBUG_RET( 1, "ssl_get_ecdh_params_from_cert", ret );
+            MBEDTLS_SSL_DEBUG_RET( 1, "ssl_cli_get_ecdh_params_from_cert", ret );
             mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
                                             MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
             return( ret );
@@ -2717,16 +2601,6 @@ static int ssl_parse_certificate_request( mbedtls_ssl_context *ssl )
     {
         size_t sig_alg_len = ( ( buf[mbedtls_ssl_hs_hdr_len( ssl ) + 1 + n] <<  8 )
                              | ( buf[mbedtls_ssl_hs_hdr_len( ssl ) + 2 + n]       ) );
-#if defined(MBEDTLS_DEBUG_C)
-        unsigned char* sig_alg = buf + mbedtls_ssl_hs_hdr_len( ssl ) + 3 + n;
-        size_t i;
-
-        for( i = 0; i < sig_alg_len; i += 2 )
-        {
-            MBEDTLS_SSL_DEBUG_MSG( 3, ( "Supported Signature Algorithm found: %d"
-                                        ",%d", sig_alg[i], sig_alg[i + 1]  ) );
-        }
-#endif
 
         n += 2 + sig_alg_len;
 
@@ -3318,11 +3192,11 @@ static int ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
 
     mbedtls_zeroize( ssl->session_negotiate->ticket,
                       ssl->session_negotiate->ticket_len );
-    mbedtls_free( ssl->session_negotiate->ticket );
+    free( ssl->session_negotiate->ticket );
     ssl->session_negotiate->ticket = NULL;
     ssl->session_negotiate->ticket_len = 0;
 
-    if( ( ticket = mbedtls_calloc( 1, ticket_len ) ) == NULL )
+    if( ( ticket = (unsigned char*)calloc( 1, ticket_len ) ) == NULL )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "ticket alloc failed" ) );
         mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,

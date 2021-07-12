@@ -24,7 +24,7 @@
 #include <d3d9.h>
 
 #include "d3d_common.h"
-#include "../video_driver.h"
+#include "../../retroarch.h"
 #include "../../verbosity.h"
 
 #define D3D9_DECL_FVF_TEXCOORD(stream, offset, index) \
@@ -40,7 +40,6 @@ typedef struct d3d9_renderchain_driver
    void (*chain_free)(void *data);
    void *(*chain_new)(void);
    bool (*init)(d3d9_video_t *d3d,
-         const video_info_t *video_info,
          LPDIRECT3DDEVICE9 dev,
          const D3DVIEWPORT9 *final_viewport,
          const struct LinkInfo *info,
@@ -52,8 +51,6 @@ typedef struct d3d9_renderchain_driver
          const char *id, const char *path,
          bool smooth);
    bool (*render)(d3d9_video_t *d3d,
-         const video_frame_info_t *video_info,
-         state_tracker_t *tracker,
          const void *frame,
          unsigned width, unsigned height, unsigned pitch, unsigned rotation);
    const char *ident;
@@ -69,6 +66,9 @@ typedef struct d3d9_video
    /* TODO - refactor this away properly. */
    bool resolution_hd_enable;
 
+   /* Only used for Xbox */
+   bool widescreen_mode;
+
    unsigned cur_mon_id;
    unsigned dev_rotation;
 
@@ -82,7 +82,6 @@ typedef struct d3d9_video
    math_matrix_4x4 mvp_rotate;
    math_matrix_4x4 mvp_transposed;
 
-   state_tracker_t *state_tracker;
    struct video_viewport vp;
    struct video_shader shader;
    video_info_t video_info;
@@ -111,7 +110,7 @@ static INLINE bool d3d9_swap(void *data, LPDIRECT3DDEVICE9 dev)
 #ifdef _XBOX
    IDirect3DDevice9_Present(dev, NULL, NULL, NULL, NULL);
 #else
-   if (IDirect3DDevice9_Present(dev, NULL, NULL, NULL, NULL) 
+   if (IDirect3DDevice9_Present(dev, NULL, NULL, NULL, NULL)
          == D3DERR_DEVICELOST)
       return false;
 #endif
@@ -161,7 +160,7 @@ static INLINE bool d3d9_texture_get_surface_level(
       LPDIRECT3DTEXTURE9 tex,
       unsigned idx, void **_ppsurface_level)
 {
-   if (tex && 
+   if (tex &&
          SUCCEEDED(IDirect3DTexture9_GetSurfaceLevel(
                tex, idx, (IDirect3DSurface9**)_ppsurface_level)))
       return true;
@@ -457,6 +456,12 @@ static INLINE void d3d9_set_viewports(LPDIRECT3DDEVICE9 dev,
       IDirect3DDevice9_SetViewport(dev, (D3DVIEWPORT9*)vp);
 }
 
+static INLINE void d3d9_set_scissor_rect(
+      LPDIRECT3DDEVICE9 dev, RECT *rect)
+{
+   IDirect3DDevice9_SetScissorRect(dev, rect);
+}
+
 static INLINE void d3d9_set_render_state(
       LPDIRECT3DDEVICE9 dev, D3DRENDERSTATETYPE state, DWORD value)
 {
@@ -479,7 +484,7 @@ static INLINE void d3d9_disable_blend_func(LPDIRECT3DDEVICE9 dev)
       d3d9_set_render_state(dev, D3DRS_ALPHABLENDENABLE, false);
 }
 
-static INLINE void 
+static INLINE void
 d3d9_set_vertex_declaration(LPDIRECT3DDEVICE9 dev,
       LPDIRECT3DVERTEXDECLARATION9 vertex_data)
 {
@@ -640,13 +645,13 @@ bool d3d9_create_device(void *dev,
 bool d3d9_reset(void *dev, void *d3dpp);
 
 static INLINE bool d3d9_device_get_backbuffer(
-      LPDIRECT3DDEVICE9 dev, 
-      unsigned idx, unsigned swapchain_idx, 
+      LPDIRECT3DDEVICE9 dev,
+      unsigned idx, unsigned swapchain_idx,
       unsigned backbuffer_type, void **data)
 {
    if (dev &&
-         SUCCEEDED(IDirect3DDevice9_GetBackBuffer(dev, 
-               swapchain_idx, idx, 
+         SUCCEEDED(IDirect3DDevice9_GetBackBuffer(dev,
+               swapchain_idx, idx,
                (D3DBACKBUFFER_TYPE)backbuffer_type,
                (LPDIRECT3DSURFACE9*)data)))
       return true;
@@ -805,6 +810,8 @@ static INLINE void d3d9_convert_geometry(
          break;
    }
 }
+
+void d3d9_set_mvp(void *data, const void *userdata);
 
 RETRO_END_DECLS
 

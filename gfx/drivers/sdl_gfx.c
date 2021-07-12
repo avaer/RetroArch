@@ -40,32 +40,30 @@
 #include "SDL_syswm.h"
 
 #include "../font_driver.h"
-#include "../video_driver.h"
 
 #include "../../configuration.h"
+#include "../../retroarch.h"
 
 typedef struct sdl_menu_frame
 {
    bool active;
-   SDL_Surface *frame;
    struct scaler_ctx scaler;
-
+   SDL_Surface *frame;
 } sdl_menu_frame_t;
 
 typedef struct sdl_video
 {
-   SDL_Surface *screen;
    bool quitting;
-
-   void *font;
-   const font_renderer_driver_t *font_driver;
    uint8_t font_r;
    uint8_t font_g;
    uint8_t font_b;
 
    struct scaler_ctx scaler;
-
    sdl_menu_frame_t menu;
+   SDL_Surface *screen;
+
+   void *font;
+   const font_renderer_driver_t *font_driver;
 } sdl_video_t;
 
 static void sdl_gfx_free(void *data)
@@ -88,25 +86,32 @@ static void sdl_gfx_free(void *data)
    free(vid);
 }
 
-static void sdl_init_font(sdl_video_t *vid, const char *font_path, unsigned font_size)
+static void sdl_init_font(sdl_video_t *vid,
+      bool video_font_enable,
+      const char *path_font,
+      float video_font_size,
+      float msg_color_r,
+      float msg_color_g,
+      float msg_color_b
+      )
 {
    int r, g, b;
-   settings_t *settings = config_get_ptr();
 
-   if (!settings->bools.video_font_enable)
+   if (!video_font_enable)
       return;
 
-   if (!font_renderer_create_default((const void**)&vid->font_driver, &vid->font,
-            *settings->paths.path_font ? settings->paths.path_font : NULL,
-            settings->floats.video_font_size))
+   if (!font_renderer_create_default(
+            &vid->font_driver, &vid->font,
+            *path_font ? path_font : NULL,
+            video_font_size))
    {
       RARCH_LOG("[SDL]: Could not initialize fonts.\n");
       return;
    }
 
-   r = settings->floats.video_msg_color_r * 255;
-   g = settings->floats.video_msg_color_g * 255;
-   b = settings->floats.video_msg_color_b * 255;
+   r = msg_color_r * 255;
+   g = msg_color_g * 255;
+   b = msg_color_b * 255;
 
    r = (r < 0) ? 0 : (r > 255 ? 255 : r);
    g = (g < 0) ? 0 : (g > 255 ? 255 : g);
@@ -117,32 +122,39 @@ static void sdl_init_font(sdl_video_t *vid, const char *font_path, unsigned font
    vid->font_b = b;
 }
 
-static void sdl_render_msg(sdl_video_t *vid, SDL_Surface *buffer,
-      const char *msg, unsigned width, unsigned height, const SDL_PixelFormat *fmt)
+static void sdl_render_msg(
+      sdl_video_t *vid,
+      SDL_Surface *buffer,
+      const char *msg,
+      unsigned width,
+      unsigned height,
+      const SDL_PixelFormat *fmt,
+      float msg_pos_x,
+      float msg_pos_y
+      )
 {
    int x, y, msg_base_x, msg_base_y;
    unsigned rshift, gshift, bshift;
    const struct font_atlas *atlas = NULL;
-   settings_t *settings = config_get_ptr();
 
    if (!vid->font)
       return;
 
-   atlas = vid->font_driver->get_atlas(vid->font);
+   atlas      = vid->font_driver->get_atlas(vid->font);
 
-   msg_base_x = settings->floats.video_msg_pos_x * width;
-   msg_base_y = (1.0f - settings->floats.video_msg_pos_y) * height;
+   msg_base_x = msg_pos_x * width;
+   msg_base_y = (1.0f - msg_pos_y) * height;
 
-   rshift = fmt->Rshift;
-   gshift = fmt->Gshift;
-   bshift = fmt->Bshift;
+   rshift     = fmt->Rshift;
+   gshift     = fmt->Gshift;
+   bshift     = fmt->Bshift;
 
    for (; *msg; msg++)
    {
       int glyph_width, glyph_height;
       int base_x, base_y, max_width, max_height;
-      uint32_t *out      = NULL;
-      const uint8_t *src = NULL;
+      uint32_t             *out      = NULL;
+      const uint8_t             *src = NULL;
       const struct font_glyph *glyph = vid->font_driver->get_glyph(vid->font, (uint8_t)*msg);
       if (!glyph)
          continue;
@@ -150,23 +162,23 @@ static void sdl_render_msg(sdl_video_t *vid, SDL_Surface *buffer,
       glyph_width  = glyph->width;
       glyph_height = glyph->height;
 
-      base_x = msg_base_x + glyph->draw_offset_x;
-      base_y = msg_base_y + glyph->draw_offset_y;
-      src    = atlas->buffer + glyph->atlas_offset_x
+      base_x       = msg_base_x + glyph->draw_offset_x;
+      base_y       = msg_base_y + glyph->draw_offset_y;
+      src          = atlas->buffer + glyph->atlas_offset_x
          + glyph->atlas_offset_y * atlas->width;
 
       if (base_x < 0)
       {
-         src -= base_x;
+         src         -= base_x;
          glyph_width += base_x;
-         base_x = 0;
+         base_x       = 0;
       }
 
       if (base_y < 0)
       {
-         src -= base_y * (int)atlas->width;
+         src          -= base_y * (int)atlas->width;
          glyph_height += base_y;
-         base_y = 0;
+         base_y        = 0;
       }
 
       max_width  = width - base_x;
@@ -180,22 +192,25 @@ static void sdl_render_msg(sdl_video_t *vid, SDL_Surface *buffer,
       if (glyph_height > max_height)
          glyph_height = max_height;
 
-      out = (uint32_t*)buffer->pixels + base_y * (buffer->pitch >> 2) + base_x;
+      out = (uint32_t*)buffer->pixels + base_y 
+         * (buffer->pitch >> 2) + base_x;
 
       for (y = 0; y < glyph_height; y++, src += atlas->width, out += buffer->pitch >> 2)
       {
          for (x = 0; x < glyph_width; x++)
          {
-            unsigned blend = src[x];
+            unsigned blend   = src[x];
             unsigned out_pix = out[x];
-            unsigned r = (out_pix >> rshift) & 0xff;
-            unsigned g = (out_pix >> gshift) & 0xff;
-            unsigned b = (out_pix >> bshift) & 0xff;
+            unsigned       r = (out_pix >> rshift) & 0xff;
+            unsigned       g = (out_pix >> gshift) & 0xff;
+            unsigned       b = (out_pix >> bshift) & 0xff;
 
-            unsigned out_r = (r * (256 - blend) + vid->font_r * blend) >> 8;
-            unsigned out_g = (g * (256 - blend) + vid->font_g * blend) >> 8;
-            unsigned out_b = (b * (256 - blend) + vid->font_b * blend) >> 8;
-            out[x] = (out_r << rshift) | (out_g << gshift) | (out_b << bshift);
+            unsigned   out_r = (r * (256 - blend) + vid->font_r * blend) >> 8;
+            unsigned   out_g = (g * (256 - blend) + vid->font_g * blend) >> 8;
+            unsigned   out_b = (b * (256 - blend) + vid->font_b * blend) >> 8;
+            out[x]           = (out_r << rshift) | 
+                               (out_g << gshift) |
+                               (out_b << bshift);
          }
       }
 
@@ -226,12 +241,19 @@ static void sdl_gfx_set_handles(void)
 #endif
 }
 
-static void *sdl_gfx_init(const video_info_t *video, const input_driver_t **input, void **input_data)
+static void *sdl_gfx_init(const video_info_t *video,
+      input_driver_t **input, void **input_data)
 {
    unsigned full_x, full_y;
    const SDL_VideoInfo *video_info = NULL;
-   sdl_video_t *vid = NULL;
-   settings_t *settings = config_get_ptr();
+   sdl_video_t                *vid = NULL;
+   settings_t            *settings = config_get_ptr();
+   const char *path_font           = settings->paths.path_font;
+   float video_font_size           = settings->floats.video_font_size;
+   bool video_font_enable          = settings->bools.video_font_enable;
+   float msg_color_r               = settings->floats.video_msg_color_r;
+   float msg_color_g               = settings->floats.video_msg_color_g;
+   float msg_color_b               = settings->floats.video_msg_color_b;
 
 #ifdef HAVE_X11
    XInitThreads();
@@ -278,7 +300,8 @@ static void *sdl_gfx_init(const video_info_t *video, const input_driver_t **inpu
 
    if (input && input_data)
    {
-      void *sdl_input = input_sdl.init(settings->arrays.input_joypad_driver);
+      void *sdl_input = input_driver_init_wrap(&input_sdl,
+            settings->arrays.input_joypad_driver);
 
       if (sdl_input)
       {
@@ -292,7 +315,12 @@ static void *sdl_gfx_init(const video_info_t *video, const input_driver_t **inpu
       }
    }
 
-   sdl_init_font(vid, settings->paths.path_font, settings->floats.video_font_size);
+   sdl_init_font(vid,
+         video_font_enable,
+         path_font, video_font_size,
+         msg_color_r,
+         msg_color_g,
+         msg_color_b);
 
    vid->scaler.scaler_type      = video->smooth ? SCALER_TYPE_BILINEAR : SCALER_TYPE_POINT;
    vid->scaler.in_fmt           = video->rgb32 ? SCALER_FMT_ARGB8888 : SCALER_FMT_RGB565;
@@ -336,8 +364,11 @@ static bool sdl_gfx_frame(void *data, const void *frame, unsigned width,
       unsigned height, uint64_t frame_count,
       unsigned pitch, const char *msg, video_frame_info_t *video_info)
 {
-   sdl_video_t                    *vid = (sdl_video_t*)data;
    char title[128];
+   sdl_video_t                    *vid = (sdl_video_t*)data;
+#ifdef HAVE_MENU
+   bool menu_is_alive                  = video_info->menu_is_alive;
+#endif
 
    if (!frame)
       return true;
@@ -362,15 +393,17 @@ static bool sdl_gfx_frame(void *data, const void *frame, unsigned width,
          pitch);
 
 #ifdef HAVE_MENU
-   menu_driver_frame(video_info);
-#endif
+   menu_driver_frame(menu_is_alive, video_info);
 
    if (vid->menu.active)
       SDL_BlitSurface(vid->menu.frame, NULL, vid->screen, NULL);
+#endif
 
    if (msg)
       sdl_render_msg(vid, vid->screen,
-            msg, vid->screen->w, vid->screen->h, vid->screen->format);
+            msg, vid->screen->w, vid->screen->h, vid->screen->format,
+            video_info->font_msg_pos_x,
+            video_info->font_msg_pos_y);
 
    if (SDL_MUSTLOCK(vid->screen))
       SDL_UnlockSurface(vid->screen);
@@ -383,11 +416,7 @@ static bool sdl_gfx_frame(void *data, const void *frame, unsigned width,
    return true;
 }
 
-static void sdl_gfx_set_nonblock_state(void *data, bool state)
-{
-   (void)data; /* Can SDL even do this? */
-   (void)state;
-}
+static void sdl_gfx_set_nonblock_state(void *a, bool b, bool c, unsigned d) { }
 
 static bool sdl_gfx_alive(void *data)
 {
@@ -398,14 +427,11 @@ static bool sdl_gfx_alive(void *data)
 
 static bool sdl_gfx_focus(void *data)
 {
-   (void)data;
    return (SDL_GetAppState() & (SDL_APPINPUTFOCUS | SDL_APPACTIVE)) == (SDL_APPINPUTFOCUS | SDL_APPACTIVE);
 }
 
 static bool sdl_gfx_suppress_screensaver(void *data, bool enable)
 {
-   (void)data;
-   (void)enable;
 #ifdef HAVE_X11
    if (video_driver_display_type_get() == RARCH_DISPLAY_X11)
    {
@@ -417,49 +443,22 @@ static bool sdl_gfx_suppress_screensaver(void *data, bool enable)
    return false;
 }
 
-static bool sdl_gfx_has_windowed(void *data)
-{
-   (void)data;
-
-   /* TODO - implement. */
-   return true;
-}
+/* TODO/FIXME - implement */
+static bool sdl_gfx_has_windowed(void *data) { return true; }
 
 static void sdl_gfx_viewport_info(void *data, struct video_viewport *vp)
 {
    sdl_video_t *vid = (sdl_video_t*)data;
-   vp->x = vp->y = 0;
+   vp->x      = 0;
+   vp->y      = 0;
    vp->width  = vp->full_width  = vid->screen->w;
    vp->height = vp->full_height = vid->screen->h;
 }
 
-static void sdl_set_filtering(void *data, unsigned index, bool smooth)
+static void sdl_set_filtering(void *data, unsigned index, bool smooth, bool ctx_scaling)
 {
    sdl_video_t *vid = (sdl_video_t*)data;
    vid->scaler.scaler_type = smooth ? SCALER_TYPE_BILINEAR : SCALER_TYPE_POINT;
-}
-
-static void sdl_set_aspect_ratio(void *data, unsigned aspect_ratio_idx)
-{
-   switch (aspect_ratio_idx)
-   {
-      case ASPECT_RATIO_SQUARE:
-         video_driver_set_viewport_square_pixel();
-         break;
-
-      case ASPECT_RATIO_CORE:
-         video_driver_set_viewport_core();
-         break;
-
-      case ASPECT_RATIO_CONFIG:
-         video_driver_set_viewport_config();
-         break;
-
-      default:
-         break;
-   }
-
-   video_driver_set_aspect_ratio_value(aspectratio_lut[aspect_ratio_idx].value);
 }
 
 static void sdl_apply_state_changes(void *data)
@@ -499,7 +498,6 @@ static void sdl_set_texture_enable(void *data, bool state, bool full_screen)
    vid->menu.active = state;
 }
 
-
 static void sdl_show_mouse(void *data, bool state)
 {
    (void)data;
@@ -516,10 +514,17 @@ static void sdl_grab_mouse_toggle(void *data)
    SDL_WM_GrabInput(mode == SDL_GRAB_ON ? SDL_GRAB_OFF : SDL_GRAB_ON);
 }
 
+static uint32_t sdl_get_flags(void *data)
+{
+   uint32_t             flags   = 0;
+
+   BIT32_SET(flags, GFX_CTX_FLAGS_SCREENSHOTS_SUPPORTED);
+
+   return flags;
+}
+
 static const video_poke_interface_t sdl_poke_interface = {
-   NULL, /* get_flags */
-   NULL,                /* set_coords */
-   NULL,                /* set_mvp */
+   sdl_get_flags,
    NULL,
    NULL,
    NULL,
@@ -530,7 +535,7 @@ static const video_poke_interface_t sdl_poke_interface = {
    NULL, /* get_video_output_next */
    NULL, /* get_current_framebuffer */
    NULL, /* get_proc_address */
-   sdl_set_aspect_ratio,
+   NULL,
    sdl_apply_state_changes,
    sdl_set_texture_frame,
    sdl_set_texture_enable,
@@ -559,20 +564,6 @@ static bool sdl_gfx_set_shader(void *data,
    return false;
 }
 
-static void sdl_gfx_set_rotation(void *data, unsigned rotation)
-{
-   (void)data;
-   (void)rotation;
-}
-
-static bool sdl_gfx_read_viewport(void *data, uint8_t *buffer, bool is_idle)
-{
-   (void)data;
-   (void)buffer;
-
-   return true;
-}
-
 video_driver_t video_sdl = {
    sdl_gfx_init,
    sdl_gfx_frame,
@@ -585,12 +576,15 @@ video_driver_t video_sdl = {
    sdl_gfx_free,
    "sdl",
    NULL,
-   sdl_gfx_set_rotation,
+   NULL, /* set_rotation */
    sdl_gfx_viewport_info,
-   sdl_gfx_read_viewport,
+   NULL, /* read_viewport  */
    NULL, /* read_frame_raw */
 #ifdef HAVE_OVERLAY
    NULL,
+#endif
+#ifdef HAVE_VIDEO_LAYOUT
+  NULL,
 #endif
    sdl_get_poke_interface
 };

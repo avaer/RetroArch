@@ -28,6 +28,7 @@
 
 #include <windows.h>
 #endif /* !defined(_XBOX) */
+#include <math.h>
 
 #include <retro_miscellaneous.h>
 #include <string/stdstring.h>
@@ -37,13 +38,17 @@
 #endif
 
 #include "win32_common.h"
+
+#ifdef HAVE_GDI
 #include "gdi_common.h"
+#endif
+
 #include "../../frontend/frontend_driver.h"
 #include "../../configuration.h"
 #include "../../verbosity.h"
-#include "../../driver.h"
 #include "../../paths.h"
 #include "../../retroarch.h"
+#include "../../tasks/task_content.h"
 #include "../../tasks/tasks_internal.h"
 #include "../../core_info.h"
 
@@ -51,11 +56,7 @@
 
 #include <commdlg.h>
 #include <dbt.h>
-#include "../../retroarch.h"
-#include "../../input/input_driver.h"
 #include "../../input/input_keymaps.h"
-#include "../video_thread_wrapper.h"
-#include "../video_display_server.h"
 #include <shellapi.h>
 
 #ifdef HAVE_MENU
@@ -79,6 +80,33 @@
 #define DragQueryFileR DragQueryFileW
 #endif
 
+/* For some reason this is missing from mingw winuser.h */
+#ifndef EDS_ROTATEDMODE
+#define EDS_ROTATEDMODE 4
+#endif
+
+/* These are defined in later SDKs, thus ifdeffed. */
+
+#ifndef WM_MOUSEHWHEEL
+#define WM_MOUSEHWHEEL                  0x20e
+#endif
+
+#ifndef WM_MOUSEWHEEL
+#define WM_MOUSEWHEEL                   0x020A
+#endif
+
+#ifndef WM_POINTERUPDATE
+#define WM_POINTERUPDATE                0x0245
+#endif
+
+#ifndef WM_POINTERDOWN
+#define WM_POINTERDOWN                  0x0246
+#endif
+
+#ifndef WM_POINTERUP
+#define WM_POINTERUP                    0x0247
+#endif
+
 const GUID GUID_DEVINTERFACE_HID = { 0x4d1e55b2, 0xf16f, 0x11Cf, { 0x88, 0xcb, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30 } };
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x501
 static HDEVNOTIFY notification_handler;
@@ -87,199 +115,120 @@ static HDEVNOTIFY notification_handler;
 #ifdef HAVE_DINPUT
 extern bool dinput_handle_message(void *dinput, UINT message,
       WPARAM wParam, LPARAM lParam);
-extern void *dinput_gdi;
-extern void *dinput_wgl;
-extern void *dinput;
 #endif
 
-typedef enum  {
-  DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED_CUSTOM                 = 0,
-  DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE_CUSTOM                = 1,
-  DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_CUSTOM                  = 2,
-  DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_UPPERFIELDFIRST_CUSTOM  = DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_CUSTOM,
-  DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_LOWERFIELDFIRST_CUSTOM  = 3,
-  DISPLAYCONFIG_SCANLINE_ORDERING_FORCE_UINT32_CUSTOM                = 0xFFFFFFFF
-} DISPLAYCONFIG_SCANLINE_ORDERING_CUSTOM;
-
-typedef enum  {
-  DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE_CUSTOM         = 1,
-  DISPLAYCONFIG_MODE_INFO_TYPE_TARGET_CUSTOM        = 2,
-  DISPLAYCONFIG_MODE_INFO_TYPE_DESKTOP_IMAGE_CUSTOM  = 3,
-  DISPLAYCONFIG_MODE_INFO_TYPE_FORCE_UINT32_CUSTOM   = 0xFFFFFFFF
-} DISPLAYCONFIG_MODE_INFO_TYPE_CUSTOM;
-
-typedef enum  { 
-  DISPLAYCONFIG_PIXELFORMAT_8BPP_CUSTOM          = 1,
-  DISPLAYCONFIG_PIXELFORMAT_16BPP_CUSTOM         = 2,
-  DISPLAYCONFIG_PIXELFORMAT_24BPP_CUSTOM         = 3,
-  DISPLAYCONFIG_PIXELFORMAT_32BPP_CUSTOM         = 4,
-  DISPLAYCONFIG_PIXELFORMAT_NONGDI_CUSTOM        = 5,
-  DISPLAYCONFIG_PIXELFORMAT_FORCE_UINT32_CUSTOM  = 0xffffffff
-} DISPLAYCONFIG_PIXELFORMAT_CUSTOM;
-
-typedef enum  {
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_OTHER_CUSTOM                 = -1,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HD15_CUSTOM                  = 0,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_SVIDEO_CUSTOM                = 1,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_COMPOSITE_VIDEO_CUSTOM       = 2,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_COMPONENT_VIDEO_CUSTOM       = 3,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DVI_CUSTOM                   = 4,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI_CUSTOM                  = 5,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_LVDS_CUSTOM                  = 6,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_D_JPN_CUSTOM                 = 8,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_SDI_CUSTOM                   = 9,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EXTERNAL_CUSTOM  = 10,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED_CUSTOM  = 11,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EXTERNAL_CUSTOM          = 12,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED_CUSTOM          = 13,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_SDTVDONGLE_CUSTOM            = 14,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_MIRACAST_CUSTOM              = 15,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL_CUSTOM              = 0x80000000,
-  DISPLAYCONFIG_OUTPUT_TECHNOLOGY_FORCE_UINT32_CUSTOM          = 0xFFFFFFFF
-} DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY_CUSTOM;
-
-typedef enum  {
-  DISPLAYCONFIG_ROTATION_IDENTITY_CUSTOM      = 1,
-  DISPLAYCONFIG_ROTATION_ROTATE90_CUSTOM      = 2,
-  DISPLAYCONFIG_ROTATION_ROTATE180_CUSTOM     = 3,
-  DISPLAYCONFIG_ROTATION_ROTATE270_CUSTOM     = 4,
-  DISPLAYCONFIG_ROTATION_FORCE_UINT32_CUSTOM  = 0xFFFFFFFF
-} DISPLAYCONFIG_ROTATION_CUSTOM;
-
-typedef enum  {
-  DISPLAYCONFIG_SCALING_IDENTITY_CUSTOM                = 1,
-  DISPLAYCONFIG_SCALING_CENTERED_CUSTOM                = 2,
-  DISPLAYCONFIG_SCALING_STRETCHED_CUSTOM               = 3,
-  DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX_CUSTOM  = 4,
-  DISPLAYCONFIG_SCALING_CUSTOM_CUSTOM                  = 5,
-  DISPLAYCONFIG_SCALING_PREFERRED_CUSTOM               = 128,
-  DISPLAYCONFIG_SCALING_FORCE_UINT32_CUSTOM            = 0xFFFFFFFF
-} DISPLAYCONFIG_SCALING_CUST;
-
-typedef enum  {
-  DISPLAYCONFIG_TOPOLOGY_INTERNAL_CUSTOM      = 0x00000001,
-  DISPLAYCONFIG_TOPOLOGY_CLONE_CUSTOM         = 0x00000002,
-  DISPLAYCONFIG_TOPOLOGY_EXTEND_CUSTOM        = 0x00000004,
-  DISPLAYCONFIG_TOPOLOGY_EXTERNAL_CUSTOM      = 0x00000008,
-  DISPLAYCONFIG_TOPOLOGY_FORCE_UINT32_CUSTOM  = 0xFFFFFFFF
-} DISPLAYCONFIG_TOPOLOGY_ID_CUSTOM;
-
-typedef struct DISPLAYCONFIG_RATIONAL_CUSTOM {
-  UINT32 Numerator;
-  UINT32 Denominator;
+typedef struct DISPLAYCONFIG_RATIONAL_CUSTOM
+{
+   UINT32 Numerator;
+   UINT32 Denominator;
 } DISPLAYCONFIG_RATIONAL_CUSTOM;
 
-typedef struct DISPLAYCONFIG_2DREGION_CUSTOM {
-  UINT32 cx;
-  UINT32 cy;
+typedef struct DISPLAYCONFIG_2DREGION_CUSTOM
+{
+   UINT32 cx;
+   UINT32 cy;
 } DISPLAYCONFIG_2DREGION_CUSTOM;
 
-typedef struct DISPLAYCONFIG_VIDEO_SIGNAL_INFO_CUSTOM {
-  UINT64                          pixelRate;
-  DISPLAYCONFIG_RATIONAL_CUSTOM          hSyncFreq;
-  DISPLAYCONFIG_RATIONAL_CUSTOM          vSyncFreq;
-  DISPLAYCONFIG_2DREGION_CUSTOM          activeSize;
-  DISPLAYCONFIG_2DREGION_CUSTOM          totalSize;
-  union {
-    struct {
-      UINT32 videoStandard  :16;
-      UINT32 vSyncFreqDivider  :6;
-      UINT32 reserved  :10;
-    } AdditionalSignalInfo;
-    UINT32 videoStandard;
-  };
-  DISPLAYCONFIG_SCANLINE_ORDERING_CUSTOM scanLineOrdering;
+typedef struct DISPLAYCONFIG_VIDEO_SIGNAL_INFO_CUSTOM
+{
+   UINT64                          pixelRate;
+   DISPLAYCONFIG_RATIONAL_CUSTOM          hSyncFreq;
+   DISPLAYCONFIG_RATIONAL_CUSTOM          vSyncFreq;
+   DISPLAYCONFIG_2DREGION_CUSTOM          activeSize;
+   DISPLAYCONFIG_2DREGION_CUSTOM          totalSize;
+   union
+   {
+      struct
+      {
+         UINT32 videoStandard  :16;
+         UINT32 vSyncFreqDivider  :6;
+         UINT32 reserved  :10;
+      } AdditionalSignalInfo;
+      UINT32 videoStandard;
+   } dummyunionname;
+   UINT32 scanLineOrdering;
 } DISPLAYCONFIG_VIDEO_SIGNAL_INFO_CUSTOM;
 
-typedef struct DISPLAYCONFIG_TARGET_MODE_CUSTOM {
-  DISPLAYCONFIG_VIDEO_SIGNAL_INFO_CUSTOM targetVideoSignalInfo;
+typedef struct DISPLAYCONFIG_TARGET_MODE_CUSTOM
+{
+   DISPLAYCONFIG_VIDEO_SIGNAL_INFO_CUSTOM targetVideoSignalInfo;
 } DISPLAYCONFIG_TARGET_MODE_CUSTOM;
 
-typedef struct DISPLAYCONFIG_PATH_SOURCE_INFO_CUSTOM {
-  LUID   adapterId;
-  UINT32 id;
-  union {
-    UINT32 modeInfoIdx;
-    struct {
-      UINT32 cloneGroupId  :16;
-      UINT32 sourceModeInfoIdx  :16;
-    } DUMMYSTRUCTNAME;
-  } DUMMYUNIONNAME;
-  UINT32 statusFlags;
+typedef struct DISPLAYCONFIG_PATH_SOURCE_INFO_CUSTOM
+{
+   LUID   adapterId;
+   UINT32 id;
+   union
+   {
+      UINT32 modeInfoIdx;
+      struct
+      {
+         UINT32 cloneGroupId  :16;
+         UINT32 sourceModeInfoIdx  :16;
+      } dummystructname;
+   } dummyunionname;
+   UINT32 statusFlags;
 } DISPLAYCONFIG_PATH_SOURCE_INFO_CUSTOM;
 
-typedef struct DISPLAYCONFIG_DESKTOP_IMAGE_INFO_CUSTOM {
-  POINTL PathSourceSize;
-  RECTL  DesktopImageRegion;
-  RECTL  DesktopImageClip;
+typedef struct DISPLAYCONFIG_DESKTOP_IMAGE_INFO_CUSTOM
+{
+   POINTL PathSourceSize;
+   RECTL  DesktopImageRegion;
+   RECTL  DesktopImageClip;
 } DISPLAYCONFIG_DESKTOP_IMAGE_INFO_CUSTOM;
 
-typedef struct DISPLAYCONFIG_SOURCE_MODE_CUSTOM {
-  UINT32                    width;
-  UINT32                    height;
-  DISPLAYCONFIG_PIXELFORMAT_CUSTOM pixelFormat;
-  POINTL                    position;
+typedef struct DISPLAYCONFIG_SOURCE_MODE_CUSTOM
+{
+   UINT32                    width;
+   UINT32                    height;
+   UINT32                    pixelFormat;
+   POINTL                    position;
 } DISPLAYCONFIG_SOURCE_MODE_CUSTOM;
 
-typedef struct DISPLAYCONFIG_MODE_INFO_CUSTOM {
-  DISPLAYCONFIG_MODE_INFO_TYPE_CUSTOM infoType;
-  UINT32                       id;
-  LUID                         adapterId;
-  union {
-    DISPLAYCONFIG_TARGET_MODE_CUSTOM        targetMode;
-    DISPLAYCONFIG_SOURCE_MODE_CUSTOM        sourceMode;
-    DISPLAYCONFIG_DESKTOP_IMAGE_INFO_CUSTOM desktopImageInfo;
-  };
+typedef struct DISPLAYCONFIG_MODE_INFO_CUSTOM
+{
+   UINT32                       infoType;
+   UINT32                       id;
+   LUID                         adapterId;
+   union
+   {
+      DISPLAYCONFIG_TARGET_MODE_CUSTOM        targetMode;
+      DISPLAYCONFIG_SOURCE_MODE_CUSTOM        sourceMode;
+      DISPLAYCONFIG_DESKTOP_IMAGE_INFO_CUSTOM desktopImageInfo;
+   } dummyunionname;
 } DISPLAYCONFIG_MODE_INFO_CUSTOM;
 
-typedef struct DISPLAYCONFIG_PATH_TARGET_INFO_CUSTOM {
-  LUID                                  adapterId;
-  UINT32                                id;
-  union {
-    UINT32 modeInfoIdx;
-    struct {
-      UINT32 desktopModeInfoIdx  :16;
-      UINT32 targetModeInfoIdx  :16;
-    };
-  };
-  DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY_CUSTOM outputTechnology;
-  DISPLAYCONFIG_ROTATION_CUSTOM                rotation;
-  DISPLAYCONFIG_SCALING_CUST                 scaling;
-  DISPLAYCONFIG_RATIONAL_CUSTOM                refreshRate;
-  DISPLAYCONFIG_SCANLINE_ORDERING_CUSTOM       scanLineOrdering;
-  BOOL                                  targetAvailable;
-  UINT32                                statusFlags;
+typedef struct DISPLAYCONFIG_PATH_TARGET_INFO_CUSTOM
+{
+   LUID                                  adapterId;
+   UINT32                                id;
+   union
+   {
+      UINT32 modeInfoIdx;
+      struct
+      {
+         UINT32 desktopModeInfoIdx  :16;
+         UINT32 targetModeInfoIdx  :16;
+      } dummystructname;
+   } dummyunionname;
+   UINT32 outputTechnology;
+   UINT32 rotation;
+   UINT32 scaling;
+   DISPLAYCONFIG_RATIONAL_CUSTOM refreshRate;
+   UINT32 scanLineOrdering;
+   BOOL targetAvailable;
+   UINT32 statusFlags;
 } DISPLAYCONFIG_PATH_TARGET_INFO_CUSTOM;
 
-
-
-typedef struct DISPLAYCONFIG_PATH_INFO_CUSTOM {
-  DISPLAYCONFIG_PATH_SOURCE_INFO_CUSTOM sourceInfo;
-  DISPLAYCONFIG_PATH_TARGET_INFO_CUSTOM targetInfo;
-  UINT32                         flags;
+typedef struct DISPLAYCONFIG_PATH_INFO_CUSTOM
+{
+   DISPLAYCONFIG_PATH_SOURCE_INFO_CUSTOM sourceInfo;
+   DISPLAYCONFIG_PATH_TARGET_INFO_CUSTOM targetInfo;
+   UINT32                         flags;
 } DISPLAYCONFIG_PATH_INFO_CUSTOM;
 
-typedef LONG (WINAPI *QUERYDISPLAYCONFIG)(UINT32, UINT32*, DISPLAYCONFIG_PATH_INFO_CUSTOM*, UINT32*, DISPLAYCONFIG_MODE_INFO_CUSTOM*, DISPLAYCONFIG_TOPOLOGY_ID_CUSTOM*);
+typedef LONG (WINAPI *QUERYDISPLAYCONFIG)(UINT32, UINT32*, DISPLAYCONFIG_PATH_INFO_CUSTOM*, UINT32*, DISPLAYCONFIG_MODE_INFO_CUSTOM*, UINT32*);
 typedef LONG (WINAPI *GETDISPLAYCONFIGBUFFERSIZES)(UINT32, UINT32*, UINT32*);
-
-static bool g_win32_resized         = false;
-bool g_win32_restore_desktop        = false;
-static bool doubleclick_on_titlebar = false;
-static bool g_taskbar_is_created    = false;
-bool g_win32_inited                 = false;
-static bool g_win32_quit            = false;
-
-static int g_win32_pos_x            = CW_USEDEFAULT;
-static int g_win32_pos_y            = CW_USEDEFAULT;
-
-unsigned g_win32_resize_width       = 0;
-unsigned g_win32_resize_height      = 0;
-static unsigned g_taskbar_message   = 0;
-static unsigned win32_monitor_count = 0;
-
-static void *curD3D                 = NULL;
-
-ui_window_win32_t main_window;
 
 /* Power Request APIs */
 
@@ -328,31 +277,50 @@ typedef REASON_CONTEXT POWER_REQUEST_CONTEXT, *PPOWER_REQUEST_CONTEXT, *LPPOWER_
 #define INT_PTR_COMPAT INT_PTR
 #endif
 
+typedef struct win32_common_state
+{
+   int pos_x;
+   int pos_y;
+   unsigned pos_width;
+   unsigned pos_height;
+   unsigned taskbar_message;
+   unsigned monitor_count;
+   bool quit;
+   bool resized;
+} win32_common_state_t;
+
+/* TODO/FIXME - globals */
+bool g_win32_restore_desktop        = false;
+bool g_win32_inited                 = false;
+unsigned g_win32_resize_width       = 0;
+unsigned g_win32_resize_height      = 0;
+ui_window_win32_t main_window;
+
+/* TODO/FIXME - static globals */
+static bool taskbar_is_created      = false;
 static HMONITOR win32_monitor_last;
 static HMONITOR win32_monitor_all[MAX_MONITORS];
 
+static win32_common_state_t win32_st =
+{
+   CW_USEDEFAULT,       /* pos_x */
+   CW_USEDEFAULT,       /* pos_y */
+   0,                   /* pos_width */
+   0,                   /* pos_height */
+   0,                   /* taskbar_message */
+   false,               /* quit */
+   0,                   /* monitor_count */
+   false                /* resized */
+};
+
 bool win32_taskbar_is_created(void)
 {
-   return g_taskbar_is_created;
+   return taskbar_is_created;
 }
 
-void win32_set_taskbar_created(bool created)
-{
-   g_taskbar_is_created = created;
-}
-
-bool doubleclick_on_titlebar_pressed(void)
-{
-   return doubleclick_on_titlebar;
-}
-
-void unset_doubleclick_on_titlebar(void)
-{
-   doubleclick_on_titlebar = false;
-}
-
-INT_PTR_COMPAT CALLBACK PickCoreProc(HWND hDlg, UINT message,
-        WPARAM wParam, LPARAM lParam)
+static INT_PTR_COMPAT CALLBACK pick_core_proc(
+      HWND hDlg, UINT message,
+      WPARAM wParam, LPARAM lParam)
 {
    size_t list_size;
    core_info_list_t *core_info_list = NULL;
@@ -404,7 +372,7 @@ INT_PTR_COMPAT CALLBACK PickCoreProc(HWND hDlg, UINT message,
                         core_info_list_get_supported_cores(core_info_list,
                               path_get(RARCH_PATH_CONTENT), &core_info, &list_size);
                         info = (const core_info_t*)&core_info[lbItem];
-                        rarch_ctl(RARCH_CTL_SET_LIBRETRO_PATH,info->path);
+                        path_set(RARCH_PATH_CORE, info->path);
                      }
                      break;
                }
@@ -414,14 +382,15 @@ INT_PTR_COMPAT CALLBACK PickCoreProc(HWND hDlg, UINT message,
    return FALSE;
 }
 
-
 static BOOL CALLBACK win32_monitor_enum_proc(HMONITOR hMonitor,
       HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData)
 {
-   win32_monitor_all[win32_monitor_count++] = hMonitor;
+   win32_common_state_t 
+      *g_win32           = (win32_common_state_t*)&win32_st;
+
+   win32_monitor_all[g_win32->monitor_count++] = hMonitor;
    return TRUE;
 }
-
 
 void win32_monitor_from_window(void)
 {
@@ -470,6 +439,8 @@ void win32_monitor_info(void *data, void *hm_data, unsigned *mon_id)
    MONITORINFOEX *mon    = (MONITORINFOEX*)data;
    HMONITOR *hm_to_use   = (HMONITOR*)hm_data;
    unsigned fs_monitor   = settings->uints.video_monitor_index;
+   win32_common_state_t 
+      *g_win32           = (win32_common_state_t*)&win32_st;
 
    if (!win32_monitor_last)
       win32_monitor_last = MonitorFromWindow(GetDesktopWindow(),
@@ -477,7 +448,7 @@ void win32_monitor_info(void *data, void *hm_data, unsigned *mon_id)
 
    *hm_to_use            = win32_monitor_last;
 
-   if (fs_monitor && fs_monitor <= win32_monitor_count
+   if (fs_monitor && fs_monitor <= g_win32->monitor_count
          && win32_monitor_all[fs_monitor - 1])
    {
       *hm_to_use = win32_monitor_all[fs_monitor - 1];
@@ -485,7 +456,7 @@ void win32_monitor_info(void *data, void *hm_data, unsigned *mon_id)
    }
    else
    {
-      for (i = 0; i < win32_monitor_count; i++)
+      for (i = 0; i < g_win32->monitor_count; i++)
       {
          if (win32_monitor_all[i] != *hm_to_use)
             continue;
@@ -495,18 +466,23 @@ void win32_monitor_info(void *data, void *hm_data, unsigned *mon_id)
       }
    }
 
-   memset(mon, 0, sizeof(*mon));
-   mon->cbSize = sizeof(MONITORINFOEX);
-   GetMonitorInfo(*hm_to_use, (LPMONITORINFO)mon);
+   if (hm_to_use)
+   {
+      memset(mon, 0, sizeof(*mon));
+      mon->cbSize = sizeof(MONITORINFOEX);
+
+      GetMonitorInfo(*hm_to_use, (LPMONITORINFO)mon);
+   }
 }
 
 bool win32_load_content_from_gui(const char *szFilename)
 {
    /* poll list of current cores */
    size_t list_size;
-   content_ctx_info_t content_info = { 0 };
+   content_ctx_info_t content_info  = { 0 };
    core_info_list_t *core_info_list = NULL;
-   const core_info_t *core_info = NULL;
+   const core_info_t *core_info     = NULL;
+
    core_info_get_list(&core_info_list);
 
    if (!core_info_list)
@@ -516,9 +492,7 @@ bool win32_load_content_from_gui(const char *szFilename)
       (const char*)szFilename, &core_info, &list_size);
 
    if (!list_size)
-   {
       return false;
-   }
 
    path_set(RARCH_PATH_CONTENT, szFilename);
 
@@ -536,7 +510,6 @@ bool win32_load_content_from_gui(const char *szFilename)
          if (string_is_equal(path_get(RARCH_PATH_CORE), info->path))
          {
             /* Our previous core supports the current rom */
-            content_ctx_info_t content_info = { 0 };
             task_push_load_content_with_current_core_from_companion_ui(
                NULL,
                &content_info,
@@ -556,23 +529,23 @@ bool win32_load_content_from_gui(const char *szFilename)
       if (info)
       {
          task_push_load_content_with_new_core_from_companion_ui(
-            info->path, NULL, &content_info, NULL, NULL);
+            info->path, NULL, NULL, NULL, NULL, &content_info, NULL, NULL);
          return true;
       }
    }
    else
    {
-      bool okay = false;
+      bool            okay = false;
       settings_t *settings = config_get_ptr();
+      bool video_is_fs     = settings->bools.video_fullscreen;
+
       /* Fullscreen: Show mouse cursor for dialog */
-      if (settings->bools.video_fullscreen)
-      {
+      if (video_is_fs)
          video_driver_show_mouse();
-      }
 
       /* Pick one core that could be compatible, ew */
       if (DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_PICKCORE),
-         main_window.hwnd, PickCoreProc, (LPARAM)NULL) == IDOK)
+         main_window.hwnd, pick_core_proc, (LPARAM)NULL) == IDOK)
       {
          task_push_load_content_with_current_core_from_companion_ui(
             NULL, &content_info, CORE_TYPE_PLAIN, NULL, NULL);
@@ -580,10 +553,8 @@ bool win32_load_content_from_gui(const char *szFilename)
       }
 
       /* Fullscreen: Hide mouse cursor after dialog */
-      if (settings->bools.video_fullscreen)
-      {
+      if (video_is_fs)
          video_driver_hide_mouse();
-      }
       return okay;
    }
    return false;
@@ -591,21 +562,19 @@ bool win32_load_content_from_gui(const char *szFilename)
 
 static bool win32_drag_query_file(HWND hwnd, WPARAM wparam)
 {
-   bool okay = false;
-#ifdef LEGACY_WIN32
-   char szFilename[1024];
-   szFilename[0] = '\0';
-#else
-   char *szFilename = NULL;
-   wchar_t wszFilename[1024];
-   wszFilename[0] = L'\0';
-#endif
-
    if (DragQueryFileR((HDROP)wparam, 0xFFFFFFFF, NULL, 0))
    {
+      bool okay        = false;
 #ifdef LEGACY_WIN32
+      char szFilename[1024];
+      szFilename[0]    = '\0';
+
       DragQueryFileR((HDROP)wparam, 0, szFilename, sizeof(szFilename));
 #else
+      wchar_t wszFilename[4096];
+      char *szFilename = NULL;
+      wszFilename[0]   = L'\0';
+
       DragQueryFileR((HDROP)wparam, 0, wszFilename, sizeof(wszFilename));
       szFilename = utf16_to_utf8_string_alloc(wszFilename);
 #endif
@@ -614,57 +583,384 @@ static bool win32_drag_query_file(HWND hwnd, WPARAM wparam)
       if (szFilename)
          free(szFilename);
 #endif
+
+      return okay;
    }
 
-   return okay;
+   return false;
 }
 
-#ifndef _XBOX
-static LRESULT win32_handle_keyboard_event(HWND hwnd, UINT message,
+static void win32_save_position(void)
+{
+   RECT rect;
+   WINDOWPLACEMENT placement;
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+   settings_t *settings          = config_get_ptr();
+   int border_thickness          = GetSystemMetrics(SM_CXSIZEFRAME);
+   int title_bar_height          = GetSystemMetrics(SM_CYCAPTION);
+   int menu_bar_height           = GetSystemMetrics(SM_CYMENU);
+   bool window_save_positions    = settings->bools.video_window_save_positions;
+   bool video_fullscreen         = settings->bools.video_fullscreen;
+   bool ui_menubar_enable        = settings->bools.ui_menubar_enable;
+
+   memset(&placement, 0, sizeof(placement));
+
+   placement.length         = sizeof(placement);
+
+   GetWindowPlacement(main_window.hwnd, &placement);
+
+   g_win32->pos_x = placement.rcNormalPosition.left;
+   g_win32->pos_y = placement.rcNormalPosition.top;
+
+   if (GetWindowRect(main_window.hwnd, &rect))
+   {
+      g_win32->pos_width  = rect.right  - rect.left;
+      g_win32->pos_height = rect.bottom - rect.top;
+   }
+   if (window_save_positions)
+   {
+      if (  !video_fullscreen && 
+            !retroarch_is_forced_fullscreen() &&
+            !retroarch_is_switching_display_mode())
+      {
+         settings->uints.window_position_x      = g_win32->pos_x;
+         settings->uints.window_position_y      = g_win32->pos_y;
+         settings->uints.window_position_width  = g_win32->pos_width  - 
+            border_thickness * 2;
+         settings->uints.window_position_height = g_win32->pos_height - 
+            border_thickness * 2 - title_bar_height - 
+            (ui_menubar_enable ? menu_bar_height : 0);
+      }
+   }
+}
+
+static bool win32_browser(
+      HWND owner,
+      char *filename,
+      size_t filename_size,
+      const char *extensions,
+      const char *title,
+      const char *initial_dir)
+{
+   bool result = false;
+   const ui_browser_window_t *browser =
+      ui_companion_driver_get_browser_window_ptr();
+
+   if (browser)
+   {
+      ui_browser_window_state_t browser_state;
+
+      /* These need to be big enough to hold the
+       * path/name of any file the user may select.
+       * FIXME: We should really handle the
+       * error case when this isn't big enough. */
+      char new_title[PATH_MAX];
+      char new_file[32768];
+
+      new_title[0] = '\0';
+      new_file[0] = '\0';
+
+      if (!string_is_empty(title))
+         strlcpy(new_title, title, sizeof(new_title));
+
+      if (filename && *filename)
+         strlcpy(new_file, filename, sizeof(new_file));
+
+      /* OPENFILENAME.lpstrFilters is actually const,
+       * so this cast should be safe */
+      browser_state.filters  = (char*)extensions;
+      browser_state.title    = new_title;
+      browser_state.startdir = strdup(initial_dir);
+      browser_state.path     = new_file;
+      browser_state.window   = owner;
+
+      result = browser->open(&browser_state);
+
+      if (filename && browser_state.path)
+         strlcpy(filename, browser_state.path, filename_size);
+
+      free(browser_state.startdir);
+   }
+
+   return result;
+}
+
+static LRESULT win32_menu_loop(HWND owner, WPARAM wparam)
+{
+   WPARAM mode            = wparam & 0xffff;
+
+   switch (mode)
+   {
+      case ID_M_LOAD_CORE:
+         {
+            char win32_file[PATH_MAX_LENGTH] = {0};
+            settings_t *settings    = config_get_ptr();
+            char    *title_cp       = NULL;
+            size_t converted        = 0;
+            const char *extensions  = "Libretro core (.dll)\0*.dll\0All Files\0*.*\0\0";
+            const char *title       = msg_hash_to_str(MENU_ENUM_LABEL_VALUE_CORE_LIST);
+            const char *initial_dir = settings->paths.directory_libretro;
+
+            /* Convert UTF8 to UTF16, then back to the
+             * local code page.
+             * This is needed for proper multi-byte
+             * string display until Unicode is
+             * fully supported.
+             */
+            wchar_t *title_wide     = utf8_to_utf16_string_alloc(title);
+
+            if (title_wide)
+               title_cp             = utf16_to_utf8_string_alloc(title_wide);
+
+            if (!win32_browser(owner, win32_file, sizeof(win32_file),
+                     extensions, title_cp, initial_dir))
+            {
+               if (title_wide)
+                  free(title_wide);
+               if (title_cp)
+                  free(title_cp);
+               break;
+            }
+
+            if (title_wide)
+               free(title_wide);
+            if (title_cp)
+               free(title_cp);
+            path_set(RARCH_PATH_CORE, win32_file);
+            command_event(CMD_EVENT_LOAD_CORE, NULL);
+         }
+         break;
+      case ID_M_LOAD_CONTENT:
+         {
+            char win32_file[PATH_MAX_LENGTH] = {0};
+            char *title_cp          = NULL;
+            size_t converted        = 0;
+            const char *extensions  = "All Files (*.*)\0*.*\0\0";
+            const char *title       = msg_hash_to_str(
+                  MENU_ENUM_LABEL_VALUE_LOAD_CONTENT_LIST);
+            settings_t *settings    = config_get_ptr();
+            const char *initial_dir = settings->paths.directory_menu_content;
+
+            /* Convert UTF8 to UTF16, then back to the
+             * local code page.
+             * This is needed for proper multi-byte
+             * string display until Unicode is
+             * fully supported.
+             */
+            wchar_t *title_wide     = utf8_to_utf16_string_alloc(title);
+
+            if (title_wide)
+               title_cp             = utf16_to_utf8_string_alloc(title_wide);
+
+            if (!win32_browser(owner, win32_file, sizeof(win32_file),
+                     extensions, title_cp, initial_dir))
+            {
+               if (title_wide)
+                  free(title_wide);
+               if (title_cp)
+                  free(title_cp);
+               break;
+            }
+
+            if (title_wide)
+               free(title_wide);
+            if (title_cp)
+               free(title_cp);
+            win32_load_content_from_gui(win32_file);
+         }
+         break;
+      case ID_M_RESET:
+         command_event(CMD_EVENT_RESET, NULL);
+         break;
+      case ID_M_MUTE_TOGGLE:
+         command_event(CMD_EVENT_AUDIO_MUTE_TOGGLE, NULL);
+         break;
+      case ID_M_MENU_TOGGLE:
+         command_event(CMD_EVENT_MENU_TOGGLE, NULL);
+         break;
+      case ID_M_PAUSE_TOGGLE:
+         command_event(CMD_EVENT_PAUSE_TOGGLE, NULL);
+         break;
+      case ID_M_LOAD_STATE:
+         command_event(CMD_EVENT_LOAD_STATE, NULL);
+         break;
+      case ID_M_SAVE_STATE:
+         command_event(CMD_EVENT_SAVE_STATE, NULL);
+         break;
+      case ID_M_DISK_CYCLE:
+         command_event(CMD_EVENT_DISK_EJECT_TOGGLE, NULL);
+         break;
+      case ID_M_DISK_NEXT:
+         command_event(CMD_EVENT_DISK_NEXT, NULL);
+         break;
+      case ID_M_DISK_PREV:
+         command_event(CMD_EVENT_DISK_PREV, NULL);
+         break;
+      case ID_M_FULL_SCREEN:
+         command_event(CMD_EVENT_FULLSCREEN_TOGGLE, NULL);
+         break;
+      case ID_M_MOUSE_GRAB:
+         command_event(CMD_EVENT_GRAB_MOUSE_TOGGLE, NULL);
+         break;
+      case ID_M_TAKE_SCREENSHOT:
+         command_event(CMD_EVENT_TAKE_SCREENSHOT, NULL);
+         break;
+      case ID_M_QUIT:
+         PostMessage(owner, WM_CLOSE, 0, 0);
+         break;
+      case ID_M_TOGGLE_DESKTOP:
+         command_event(CMD_EVENT_UI_COMPANION_TOGGLE, NULL);
+         break;
+      default:
+         if (mode >= ID_M_WINDOW_SCALE_1X && mode <= ID_M_WINDOW_SCALE_10X)
+         {
+            unsigned idx = (mode - (ID_M_WINDOW_SCALE_1X-1));
+            rarch_ctl(RARCH_CTL_SET_WINDOWED_SCALE, &idx);
+            command_event(CMD_EVENT_RESIZE_WINDOWED_SCALE, NULL);
+         }
+         else if (mode == ID_M_STATE_INDEX_AUTO)
+         {
+            signed           idx = -1;
+            settings_t *settings = config_get_ptr();
+            configuration_set_int(
+                  settings, settings->ints.state_slot, idx);
+         }
+         else if (mode >= (ID_M_STATE_INDEX_AUTO+1)
+               && mode <= (ID_M_STATE_INDEX_AUTO+10))
+         {
+            signed           idx = (mode - (ID_M_STATE_INDEX_AUTO+1));
+            settings_t *settings = config_get_ptr();
+            configuration_set_int(
+                  settings, settings->ints.state_slot, idx);
+         }
+         break;
+   }
+
+   return 0L;
+}
+
+static LRESULT CALLBACK wnd_proc_common(
+      bool *quit, HWND hwnd, UINT message,
       WPARAM wparam, LPARAM lparam)
 {
-   uint16_t mod          = 0;
-
-   if (GetKeyState(VK_SHIFT)   & 0x80)
-      mod |= RETROKMOD_SHIFT;
-   if (GetKeyState(VK_CONTROL) & 0x80)
-      mod |=  RETROKMOD_CTRL;
-   if (GetKeyState(VK_MENU)    & 0x80)
-      mod |=  RETROKMOD_ALT;
-   if (GetKeyState(VK_CAPITAL) & 0x81)
-      mod |= RETROKMOD_CAPSLOCK;
-   if (GetKeyState(VK_SCROLL)  & 0x81)
-      mod |= RETROKMOD_SCROLLOCK;
-   if ((GetKeyState(VK_LWIN) | GetKeyState(VK_RWIN)) & 0x80)
-      mod |= RETROKMOD_META;
+   win32_common_state_t 
+      *g_win32           = (win32_common_state_t*)&win32_st;
 
    switch (message)
    {
-      /* Seems to be hard to synchronize
-       * WM_CHAR and WM_KEYDOWN properly.
-       */
-      case WM_CHAR:
-         input_keyboard_event(true, RETROK_UNKNOWN, wparam, mod,
-               RETRO_DEVICE_KEYBOARD);
-         return TRUE;
-
-      case WM_KEYUP:
-      case WM_SYSKEYUP:
-      case WM_KEYDOWN:
-      case WM_SYSKEYDOWN:
+      case WM_SYSCOMMAND:
+         /* Prevent screensavers, etc, while running. */
+         switch (wparam)
          {
-            unsigned keycode      = 0;
-            bool keydown          = true;
-            unsigned keysym       = (lparam >> 16) & 0xff;
-#if _WIN32_WINNT >= 0x0501 /* XP */
-            settings_t *settings  = config_get_ptr();
-            if (settings && string_is_equal(settings->arrays.input_driver, "raw"))
-               keysym             = (unsigned)wparam;
-#endif
+            case SC_SCREENSAVE:
+            case SC_MONITORPOWER:
+               *quit = true;
+               break;
+         }
+         break;
+      case WM_DROPFILES:
+         win32_drag_query_file(hwnd, wparam);
+         DragFinish((HDROP)wparam);
+         break;
+      case WM_CHAR:
+         *quit = true;
+         {
+            uint16_t mod          = 0;
 
-            /* Key released? */
-            if (message == WM_KEYUP || message == WM_SYSKEYUP)
-               keydown            = false;
+            if (GetKeyState(VK_SHIFT)   & 0x80)
+               mod |= RETROKMOD_SHIFT;
+            if (GetKeyState(VK_CONTROL) & 0x80)
+               mod |=  RETROKMOD_CTRL;
+            if (GetKeyState(VK_MENU)    & 0x80)
+               mod |=  RETROKMOD_ALT;
+            if (GetKeyState(VK_CAPITAL) & 0x81)
+               mod |= RETROKMOD_CAPSLOCK;
+            if (GetKeyState(VK_SCROLL)  & 0x81)
+               mod |= RETROKMOD_SCROLLOCK;
+            if ((GetKeyState(VK_LWIN) | GetKeyState(VK_RWIN)) & 0x80)
+               mod |= RETROKMOD_META;
+
+            /* Seems to be hard to synchronize
+             * WM_CHAR and WM_KEYDOWN properly.
+             */
+            input_keyboard_event(true, RETROK_UNKNOWN, wparam, mod,
+                  RETRO_DEVICE_KEYBOARD);
+         }
+         return TRUE;
+      case WM_CLOSE:
+      case WM_DESTROY:
+      case WM_QUIT:
+         g_win32->quit  = true;
+         *quit          = true;
+         /* fall-through */
+      case WM_MOVE:
+         win32_save_position();
+         break;
+      case WM_SIZE:
+         /* Do not send resize message if we minimize. */
+         if (  wparam != SIZE_MAXHIDE &&
+               wparam != SIZE_MINIMIZED)
+         {
+            if (LOWORD(lparam) != g_win32_resize_width ||
+                  HIWORD(lparam) != g_win32_resize_height)
+            {
+               g_win32_resize_width  = LOWORD(lparam);
+               g_win32_resize_height = HIWORD(lparam);
+               g_win32->resized      = true;
+            }
+         }
+         *quit = true;
+         break;
+      case WM_COMMAND:
+         {
+            settings_t *settings     = config_get_ptr();
+            bool ui_menubar_enable   = settings ? settings->bools.ui_menubar_enable : false;
+            if (ui_menubar_enable)
+               win32_menu_loop(main_window.hwnd, wparam);
+         }
+         break;
+   }
+   return 0;
+}
+
+static LRESULT CALLBACK wnd_proc_common_internal(HWND hwnd,
+      UINT message, WPARAM wparam, LPARAM lparam)
+{
+   LRESULT ret;
+   bool keydown                  = true;
+   bool quit                     = false;
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+
+   switch (message)
+   {
+      case WM_KEYUP:                /* Key released */
+      case WM_SYSKEYUP:             /* Key released */
+         keydown                  = false;
+         /* fall-through */
+      case WM_KEYDOWN:              /* Key pressed  */
+      case WM_SYSKEYDOWN:           /* Key pressed  */
+         quit                     = true;
+         {
+            uint16_t mod          = 0;
+            unsigned keycode      = 0;
+            unsigned keysym       = (lparam >> 16) & 0xff;
+
+            if (GetKeyState(VK_SHIFT)   & 0x80)
+               mod |= RETROKMOD_SHIFT;
+            if (GetKeyState(VK_CONTROL) & 0x80)
+               mod |=  RETROKMOD_CTRL;
+            if (GetKeyState(VK_MENU)    & 0x80)
+               mod |=  RETROKMOD_ALT;
+            if (GetKeyState(VK_CAPITAL) & 0x81)
+               mod |= RETROKMOD_CAPSLOCK;
+            if (GetKeyState(VK_SCROLL)  & 0x81)
+               mod |= RETROKMOD_SCROLLOCK;
+            if ((GetKeyState(VK_LWIN) | GetKeyState(VK_RWIN)) & 0x80)
+               mod |= RETROKMOD_META;
+
+            keysym             = (unsigned)wparam;
+            /* fix key binding issues on winraw when 
+             * DirectInput is not available */
 
             keycode = input_keymaps_translate_keysym_to_rk(keysym);
 
@@ -682,327 +978,388 @@ static LRESULT win32_handle_keyboard_event(HWND hwnd, UINT message,
                return 0;
          }
          break;
+      case WM_MOUSEMOVE:
+      case WM_POINTERDOWN:
+      case WM_POINTERUP:
+      case WM_POINTERUPDATE:
+      case WM_DEVICECHANGE:
+      case WM_MOUSEWHEEL:
+      case WM_MOUSEHWHEEL:
+      case WM_NCLBUTTONDBLCLK:
+#if _WIN32_WINNT >= 0x0500 /* 2K */
+         if (g_win32->taskbar_message && message == g_win32->taskbar_message)
+            taskbar_is_created = true;
+#endif
+         break;
+      case WM_DROPFILES:
+      case WM_SYSCOMMAND:
+      case WM_CHAR:
+      case WM_CLOSE:
+      case WM_DESTROY:
+      case WM_QUIT:
+      case WM_MOVE:
+      case WM_SIZE:
+      case WM_COMMAND:
+         ret = wnd_proc_common(&quit, hwnd, message, wparam, lparam);
+         if (quit)
+            return ret;
+#if _WIN32_WINNT >= 0x0500 /* 2K */
+         if (g_win32->taskbar_message && message == g_win32->taskbar_message)
+            taskbar_is_created = true;
+#endif
+         break;
+   }
+
+   return DefWindowProc(hwnd, message, wparam, lparam);
+}
+
+#ifdef HAVE_DINPUT
+static LRESULT CALLBACK wnd_proc_common_dinput_internal(HWND hwnd,
+      UINT message, WPARAM wparam, LPARAM lparam)
+{
+   LRESULT ret;
+   bool keydown                  = true;
+   bool quit                     = false;
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+
+   switch (message)
+   {
+      case WM_KEYUP:                /* Key released */
+      case WM_SYSKEYUP:             /* Key released */
+         keydown                  = false;
+         /* fall-through */
+      case WM_KEYDOWN:              /* Key pressed  */
+      case WM_SYSKEYDOWN:           /* Key pressed  */
+         quit                     = true;
+         {
+            uint16_t mod          = 0;
+            unsigned keycode      = 0;
+            unsigned keysym       = (lparam >> 16) & 0xff;
+
+            if (GetKeyState(VK_SHIFT)   & 0x80)
+               mod |= RETROKMOD_SHIFT;
+            if (GetKeyState(VK_CONTROL) & 0x80)
+               mod |=  RETROKMOD_CTRL;
+            if (GetKeyState(VK_MENU)    & 0x80)
+               mod |=  RETROKMOD_ALT;
+            if (GetKeyState(VK_CAPITAL) & 0x81)
+               mod |= RETROKMOD_CAPSLOCK;
+            if (GetKeyState(VK_SCROLL)  & 0x81)
+               mod |= RETROKMOD_SCROLLOCK;
+            if ((GetKeyState(VK_LWIN) | GetKeyState(VK_RWIN)) & 0x80)
+               mod |= RETROKMOD_META;
+
+            /* extended keys will map to dinput if the high bit is set */
+            if ((lparam >> 24 & 0x1))
+               keysym |= 0x80;
+
+            keycode = input_keymaps_translate_keysym_to_rk(keysym);
+
+            input_keyboard_event(keydown, keycode,
+                  0, mod, RETRO_DEVICE_KEYBOARD);
+
+            if (message != WM_SYSKEYDOWN)
+               return 0;
+
+            if (
+                  wparam == VK_F10  ||
+                  wparam == VK_MENU ||
+                  wparam == VK_RSHIFT
+               )
+               return 0;
+         }
+         break;
+      case WM_MOUSEMOVE:
+      case WM_POINTERDOWN:
+      case WM_POINTERUP:
+      case WM_POINTERUPDATE:
+      case WM_DEVICECHANGE:
+      case WM_MOUSEWHEEL:
+      case WM_MOUSEHWHEEL:
+      case WM_NCLBUTTONDBLCLK:
+#if _WIN32_WINNT >= 0x0500 /* 2K */
+         if (g_win32->taskbar_message && message == g_win32->taskbar_message)
+            taskbar_is_created = true;
+#endif
+#if !defined(_XBOX)
+         {
+            void* input_data = (void*)(LONG_PTR)GetWindowLongPtr(main_window.hwnd, GWLP_USERDATA);
+            if (input_data && dinput_handle_message(input_data,
+                     message, wparam, lparam))
+               return 0;
+         }
+#endif
+         break;
+      case WM_DROPFILES:
+      case WM_SYSCOMMAND:
+      case WM_CHAR:
+      case WM_CLOSE:
+      case WM_DESTROY:
+      case WM_QUIT:
+      case WM_MOVE:
+      case WM_SIZE:
+      case WM_COMMAND:
+         ret = wnd_proc_common(&quit, hwnd, message, wparam, lparam);
+         if (quit)
+            return ret;
+#if _WIN32_WINNT >= 0x0500 /* 2K */
+         if (g_win32->taskbar_message && message == g_win32->taskbar_message)
+            taskbar_is_created = true;
+#endif
+         break;
    }
 
    return DefWindowProc(hwnd, message, wparam, lparam);
 }
 #endif
-
-static LRESULT CALLBACK WndProcCommon(bool *quit, HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam)
-{
-   if (message == WM_NCLBUTTONDBLCLK)
-      doubleclick_on_titlebar = true;
-
-   switch (message)
-   {
-      case WM_SYSCOMMAND:
-         /* Prevent screensavers, etc, while running. */
-         switch (wparam)
-         {
-            case SC_SCREENSAVE:
-            case SC_MONITORPOWER:
-               *quit = true;
-               break;
-         }
-         break;
-      case WM_DROPFILES:
-         {
-            win32_drag_query_file(hwnd, wparam);
-            DragFinish((HDROP)wparam);
-         }
-         break;
-      case WM_CHAR:
-      case WM_KEYDOWN:
-      case WM_KEYUP:
-      case WM_SYSKEYUP:
-      case WM_SYSKEYDOWN:
-         *quit = true;
-         return win32_handle_keyboard_event(hwnd, message, wparam, lparam);
-
-      case WM_CLOSE:
-      case WM_DESTROY:
-      case WM_QUIT:
-         {
-            WINDOWPLACEMENT placement;
-            memset(&placement, 0, sizeof(placement));
-            placement.length = sizeof(placement);
-
-            GetWindowPlacement(main_window.hwnd, &placement);
-
-            g_win32_pos_x = placement.rcNormalPosition.left;
-            g_win32_pos_y = placement.rcNormalPosition.top;
-            g_win32_quit  = true;
-            *quit         = true;
-         }
-         break;
-      case WM_SIZE:
-         /* Do not send resize message if we minimize. */
-         if (  wparam != SIZE_MAXHIDE && 
-               wparam != SIZE_MINIMIZED)
-         {
-            if (LOWORD(lparam) != g_win32_resize_width ||
-                  HIWORD(lparam) != g_win32_resize_height)
-            {
-               g_win32_resize_width  = LOWORD(lparam);
-               g_win32_resize_height = HIWORD(lparam);
-               g_win32_resized       = true;
-            }
-         }
-         *quit = true;
-         break;
-     case WM_COMMAND:
-         {
-            settings_t *settings     = config_get_ptr();
-            if (settings && settings->bools.ui_menubar_enable)
-               win32_menu_loop(main_window.hwnd, wparam);
-         }
-         break;
-   }
-   return 0;
-}
-
-static void win32_set_droppable(ui_window_win32_t *window, bool droppable)
-{
-   if (DragAcceptFiles_func != NULL)
-      DragAcceptFiles_func(window->hwnd, droppable);
-}
 
 #if defined(HAVE_D3D) || defined (HAVE_D3D10) || defined (HAVE_D3D11) || defined (HAVE_D3D12)
-LRESULT CALLBACK WndProcD3D(HWND hwnd, UINT message,
+
+LRESULT CALLBACK wnd_proc_d3d_common(HWND hwnd, UINT message,
       WPARAM wparam, LPARAM lparam)
 {
-   LRESULT ret;
-   bool quit = false;
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
 
-   if (message == WM_NCLBUTTONDBLCLK)
-      doubleclick_on_titlebar = true;
-
-   switch (message)
+   if (message == WM_CREATE)
    {
-      case WM_DROPFILES:
-      case WM_SYSCOMMAND:
-      case WM_CHAR:
-      case WM_KEYDOWN:
-      case WM_KEYUP:
-      case WM_SYSKEYUP:
-      case WM_SYSKEYDOWN:
-      case WM_CLOSE:
-      case WM_DESTROY:
-      case WM_QUIT:
-      case WM_SIZE:
-      case WM_COMMAND:
-         ret = WndProcCommon(&quit, hwnd, message, wparam, lparam);
-         if (quit)
-            return ret;
-         break;
-      case WM_CREATE:
-         {
-            ui_window_win32_t win32_window;
-            LPCREATESTRUCT p_cs   = (LPCREATESTRUCT)lparam;
-            curD3D                = p_cs->lpCreateParams;
-            g_win32_inited        = true;
+      if (DragAcceptFiles_func)
+         DragAcceptFiles_func(hwnd, true);
 
-            win32_window.hwnd     = hwnd;
-
-            win32_set_droppable(&win32_window, true);
-         }
-         return 0;
-   }
-
-#if _WIN32_WINNT >= 0x0500 /* 2K */
-      if (g_taskbar_message && message == g_taskbar_message)
-         win32_set_taskbar_created(true);
-#endif
-
-#ifdef HAVE_DINPUT
-      if (input_get_ptr() == &input_dinput)
-      {
-         void* input_data = input_get_data();
-         if (input_data && dinput_handle_message(input_data,
-               message, wparam, lparam))
-            return 0;
-      }
-#endif
-   return DefWindowProc(hwnd, message, wparam, lparam);
-}
-#endif
-
-#if defined(HAVE_OPENGL) || defined(HAVE_VULKAN)
-LRESULT CALLBACK WndProcGL(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam)
-{
-   LRESULT ret;
-   bool quit = false;
-
-   if (message == WM_NCLBUTTONDBLCLK)
-      doubleclick_on_titlebar = true;
-
-   switch (message)
-   {
-      case WM_DROPFILES:
-      case WM_SYSCOMMAND:
-      case WM_CHAR:
-      case WM_KEYDOWN:
-      case WM_KEYUP:
-      case WM_SYSKEYUP:
-      case WM_SYSKEYDOWN:
-      case WM_CLOSE:
-      case WM_DESTROY:
-      case WM_QUIT:
-      case WM_SIZE:
-      case WM_COMMAND:
-         ret = WndProcCommon(&quit,
-               hwnd, message, wparam, lparam);
-         if (quit)
-            return ret;
-         break;
-      case WM_CREATE:
-         {
-            ui_window_win32_t win32_window;
-            win32_window.hwnd           = hwnd;
-
-            create_graphics_context(hwnd, &g_win32_quit);
-
-            win32_set_droppable(&win32_window, true);
-         }
-         return 0;
-   }
-
-#if _WIN32_WINNT >= 0x0500 /* 2K */
-      if (g_taskbar_message && message == g_taskbar_message)
-         win32_set_taskbar_created(true);
-#endif
-
-#ifdef HAVE_DINPUT
-   if (dinput_wgl && dinput_handle_message(dinput_wgl,
-            message, wparam, lparam))
+      g_win32_inited        = true;
       return 0;
-#endif
-   return DefWindowProc(hwnd, message, wparam, lparam);
-}
-#endif
-
-LRESULT CALLBACK WndProcGDI(HWND hwnd, UINT message,
-      WPARAM wparam, LPARAM lparam)
-{
-   LRESULT ret;
-   bool quit = false;
-
-   if (message == WM_NCLBUTTONDBLCLK)
-      doubleclick_on_titlebar = true;
-
-   switch (message)
-   {
-      case WM_PAINT:
-      {
-         gdi_t *gdi = (gdi_t*)video_driver_get_ptr(false);
-
-         if (gdi && gdi->memDC)
-         {
-            gdi->bmp_old = (HBITMAP)SelectObject(gdi->memDC, gdi->bmp);
-
-#ifdef HAVE_MENU
-            if (menu_driver_is_alive() && !gdi_has_menu_frame())
-            {
-               /* draw menu contents behind a gradient background */
-               if (gdi && gdi->memDC)
-               {
-                  RECT rect;
-                  HBRUSH brush = CreateSolidBrush(RGB(1,81,127));
-
-                  GetClientRect(hwnd, &rect);
-
-                  StretchBlt(gdi->winDC,
-                        0, 0,
-                        gdi->screen_width, gdi->screen_height,
-                        gdi->memDC, 0, 0, gdi->video_width, gdi->video_height, SRCCOPY);
-
-                  FillRect(gdi->memDC, &rect, brush);
-                  DeleteObject(brush);
-               }
-           }
-           else
-#endif
-           {
-              /* draw video content */
-              gdi->bmp_old = (HBITMAP)SelectObject(gdi->memDC, gdi->bmp);
-
-              StretchBlt(gdi->winDC,
-                    0, 0,
-                    gdi->screen_width, gdi->screen_height,
-                    gdi->memDC, 0, 0, gdi->video_width, gdi->video_height, SRCCOPY);
-           }
-
-           SelectObject(gdi->memDC, gdi->bmp_old);
-        }
-
-        break;
-      }
-      case WM_DROPFILES:
-      case WM_SYSCOMMAND:
-      case WM_CHAR:
-      case WM_KEYDOWN:
-      case WM_KEYUP:
-      case WM_SYSKEYUP:
-      case WM_SYSKEYDOWN:
-      case WM_CLOSE:
-      case WM_DESTROY:
-      case WM_QUIT:
-      case WM_SIZE:
-      case WM_COMMAND:
-         ret = WndProcCommon(&quit, hwnd, message, wparam, lparam);
-         if (quit)
-            return ret;
-         break;
-      case WM_CREATE:
-         {
-            ui_window_win32_t win32_window;
-            win32_window.hwnd = hwnd;
-
-            create_gdi_context(hwnd, &g_win32_quit);
-
-            win32_set_droppable(&win32_window, true);
-         }
-         return 0;
    }
 
-#if _WIN32_WINNT >= 0x0500 /* 2K */
-      if (g_taskbar_message && message == g_taskbar_message)
-         win32_set_taskbar_created(true);
-#endif
+   return wnd_proc_common_internal(hwnd, message, wparam, lparam);
+}
 
 #ifdef HAVE_DINPUT
-   if (dinput_gdi && dinput_handle_message(dinput_gdi,
-            message, wparam, lparam))
+LRESULT CALLBACK wnd_proc_d3d_dinput(HWND hwnd, UINT message,
+      WPARAM wparam, LPARAM lparam)
+{
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+
+   if (message == WM_CREATE)
+   {
+      if (DragAcceptFiles_func)
+         DragAcceptFiles_func(hwnd, true);
+
+      g_win32_inited        = true;
       return 0;
-#endif
-   return DefWindowProc(hwnd, message, wparam, lparam);
+   }
+
+   return wnd_proc_common_dinput_internal(hwnd, message, wparam, lparam);
 }
+#endif
+
+#endif
+
+#if defined(HAVE_OPENGL) || defined(HAVE_OPENGL1) || defined(HAVE_OPENGL_CORE)
+#ifdef HAVE_DINPUT
+LRESULT CALLBACK wnd_proc_wgl_dinput(HWND hwnd, UINT message,
+      WPARAM wparam, LPARAM lparam)
+{
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+
+   if (message == WM_CREATE)
+   {
+      create_wgl_context(hwnd, &g_win32->quit);
+      if (DragAcceptFiles_func)
+         DragAcceptFiles_func(hwnd, true);
+      return 0;
+   }
+
+   return wnd_proc_common_dinput_internal(hwnd, message, wparam, lparam);
+}
+#endif
+
+LRESULT CALLBACK wnd_proc_wgl_common(HWND hwnd, UINT message,
+      WPARAM wparam, LPARAM lparam)
+{
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+
+   if (message == WM_CREATE)
+   {
+      create_wgl_context(hwnd, &g_win32->quit);
+      if (DragAcceptFiles_func)
+         DragAcceptFiles_func(hwnd, true);
+      return 0;
+   }
+
+   return wnd_proc_common_internal(hwnd, message, wparam, lparam);
+}
+#endif
+
+#ifdef HAVE_VULKAN
+#ifdef HAVE_DINPUT
+LRESULT CALLBACK wnd_proc_vk_dinput(HWND hwnd, UINT message,
+      WPARAM wparam, LPARAM lparam)
+{
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+
+   if (message == WM_CREATE)
+   {
+      create_vk_context(hwnd, &g_win32->quit);
+      if (DragAcceptFiles_func)
+         DragAcceptFiles_func(hwnd, true);
+      return 0;
+   }
+
+   return wnd_proc_common_dinput_internal(hwnd, message, wparam, lparam);
+}
+#endif
+
+LRESULT CALLBACK wnd_proc_vk_common(HWND hwnd, UINT message,
+      WPARAM wparam, LPARAM lparam)
+{
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+
+   if (message == WM_CREATE)
+   {
+      create_vk_context(hwnd, &g_win32->quit);
+      if (DragAcceptFiles_func)
+         DragAcceptFiles_func(hwnd, true);
+      return 0;
+   }
+
+   return wnd_proc_common_internal(hwnd, message, wparam, lparam);
+}
+#endif
+
+#ifdef HAVE_GDI
+#ifdef HAVE_DINPUT
+LRESULT CALLBACK wnd_proc_gdi_dinput(HWND hwnd, UINT message,
+      WPARAM wparam, LPARAM lparam)
+{
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+   
+   if (message == WM_CREATE)
+   {
+      create_gdi_context(hwnd, &g_win32->quit);
+      if (DragAcceptFiles_func)
+         DragAcceptFiles_func(hwnd, true);
+      return 0;
+   }
+   else if (message == WM_PAINT)
+   {
+      gdi_t *gdi = (gdi_t*)video_driver_get_ptr(false);
+
+      if (gdi && gdi->memDC)
+      {
+         gdi->bmp_old    = (HBITMAP)SelectObject(gdi->memDC, gdi->bmp);
+
+         /* Draw video content */
+         StretchBlt(
+               gdi->winDC,
+               0,
+               0,
+               gdi->screen_width,
+               gdi->screen_height,
+               gdi->memDC,
+               0,
+               0,
+               gdi->video_width,
+               gdi->video_height,
+               SRCCOPY);
+
+         SelectObject(gdi->memDC, gdi->bmp_old);
+      }
+
+#if _WIN32_WINNT >= 0x0500 /* 2K */
+      if (     g_win32->taskbar_message 
+            && message == g_win32->taskbar_message)
+         taskbar_is_created = true;
+#endif
+   }
+
+   return wnd_proc_common_dinput_internal(hwnd, message, wparam, lparam);
+}
+#endif
+
+LRESULT CALLBACK wnd_proc_gdi_common(HWND hwnd, UINT message,
+      WPARAM wparam, LPARAM lparam)
+{
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+   
+   if (message == WM_CREATE)
+   {
+      create_gdi_context(hwnd, &g_win32->quit);
+      if (DragAcceptFiles_func)
+         DragAcceptFiles_func(hwnd, true);
+      return 0;
+   }
+   else if (message == WM_PAINT)
+   {
+      gdi_t *gdi = (gdi_t*)video_driver_get_ptr(false);
+
+      if (gdi && gdi->memDC)
+      {
+         gdi->bmp_old    = (HBITMAP)SelectObject(gdi->memDC, gdi->bmp);
+
+         /* Draw video content */
+         StretchBlt(
+               gdi->winDC,
+               0,
+               0,
+               gdi->screen_width,
+               gdi->screen_height,
+               gdi->memDC,
+               0,
+               0,
+               gdi->video_width,
+               gdi->video_height,
+               SRCCOPY);
+
+         SelectObject(gdi->memDC, gdi->bmp_old);
+      }
+
+#if _WIN32_WINNT >= 0x0500 /* 2K */
+      if (     g_win32->taskbar_message 
+            && message == g_win32->taskbar_message)
+         taskbar_is_created = true;
+#endif
+   }
+
+   return wnd_proc_common_internal(hwnd, message, wparam, lparam);
+}
+#endif
 
 bool win32_window_create(void *data, unsigned style,
       RECT *mon_rect, unsigned width,
       unsigned height, bool fullscreen)
 {
+   win32_common_state_t *g_win32 = (win32_common_state_t*)&win32_st;
+   settings_t       *settings    = config_get_ptr();
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0500 /* 2K */
    DEV_BROADCAST_DEVICEINTERFACE notification_filter;
+   unsigned    window_opacity    = settings->uints.video_window_opacity;
+   bool    window_show_decor     = settings->bools.video_window_show_decorations;
 #endif
-   settings_t *settings  = config_get_ptr();
 #ifndef _XBOX
-   main_window.hwnd = CreateWindowEx(0,
-         "RetroArch", "RetroArch",
+   bool    window_save_positions = settings->bools.video_window_save_positions;
+   unsigned    user_width        = width;
+   unsigned    user_height       = height;
+
+   if (window_save_positions && !fullscreen)
+   {
+      user_width                 = g_win32->pos_width;
+      user_height                = g_win32->pos_height;
+   }
+   main_window.hwnd              = CreateWindowEx(0,
+         "RetroArch", msg_hash_to_str(MSG_PROGRAM),
          style,
-         fullscreen ? mon_rect->left : g_win32_pos_x,
-         fullscreen ? mon_rect->top  : g_win32_pos_y,
-         width, height,
+         fullscreen ? mon_rect->left : g_win32->pos_x,
+         fullscreen ? mon_rect->top  : g_win32->pos_y,
+         user_width,
+         user_height,
          NULL, NULL, NULL, data);
    if (!main_window.hwnd)
       return false;
 
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0500 /* 2K */
-   g_taskbar_message = RegisterWindowMessage("TaskbarButtonCreated");
+   g_win32->taskbar_message            = 
+      RegisterWindowMessage("TaskbarButtonCreated");
 
-   ZeroMemory(&notification_filter, sizeof(notification_filter) );
+   memset(&notification_filter, 0, sizeof(notification_filter));
    notification_filter.dbcc_size       = sizeof(DEV_BROADCAST_DEVICEINTERFACE);
    notification_filter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
    notification_filter.dbcc_classguid  = GUID_DEVINTERFACE_HID;
@@ -1015,20 +1372,21 @@ bool win32_window_create(void *data, unsigned style,
 
    video_driver_display_type_set(RARCH_DISPLAY_WIN32);
    video_driver_display_set(0);
+   video_driver_display_userdata_set((uintptr_t)&main_window);
    video_driver_window_set((uintptr_t)main_window.hwnd);
 
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0500 /* 2K */
-   if (!settings->bools.video_window_show_decorations)
+   if (!window_show_decor)
       SetWindowLongPtr(main_window.hwnd, GWL_STYLE, WS_POPUP);
 
    /* Windows 2000 and above use layered windows to enable transparency */
-   if (settings->uints.video_window_opacity < 100)
+   if (window_opacity < 100)
    {
       SetWindowLongPtr(main_window.hwnd,
            GWL_EXSTYLE,
            GetWindowLongPtr(main_window.hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
       SetLayeredWindowAttributes(main_window.hwnd, 0, (255 *
-               settings->uints.video_window_opacity) / 100, LWA_ALPHA);
+               window_opacity) / 100, LWA_ALPHA);
    }
 #endif
 #endif
@@ -1050,6 +1408,12 @@ bool win32_get_metrics(void *data,
 
    switch (type)
    {
+      case DISPLAY_METRIC_PIXEL_WIDTH:
+         *value = pixels_x;
+         return true;
+      case DISPLAY_METRIC_PIXEL_HEIGHT:
+         *value = pixels_y;
+         return true;
       case DISPLAY_METRIC_MM_WIDTH:
          *value = physical_width;
          return true;
@@ -1070,14 +1434,27 @@ bool win32_get_metrics(void *data,
    return false;
 }
 
+void win32_unset_input_userdata(void)
+{
+   SetWindowLongPtr(main_window.hwnd, GWLP_USERDATA, 0);
+}
+
+void win32_set_input_userdata(void *data)
+{
+   SetWindowLongPtr(main_window.hwnd, GWLP_USERDATA, (LONG_PTR)data);
+}
+
 void win32_monitor_init(void)
 {
+   win32_common_state_t 
+      *g_win32            = (win32_common_state_t*)&win32_st;
+
 #if !defined(_XBOX)
-   win32_monitor_count = 0;
+   g_win32->monitor_count = 0;
    EnumDisplayMonitors(NULL, NULL,
          win32_monitor_enum_proc, 0);
 #endif
-   g_win32_quit              = false;
+   g_win32->quit          = false;
 }
 
 static bool win32_monitor_set_fullscreen(
@@ -1103,7 +1480,7 @@ static bool win32_monitor_set_fullscreen(
 #endif
 }
 
-void win32_show_cursor(bool state)
+void win32_show_cursor(void *data, bool state)
 {
 #if !defined(_XBOX)
    if (state)
@@ -1113,18 +1490,24 @@ void win32_show_cursor(bool state)
 #endif
 }
 
-void win32_check_window(bool *quit, bool *resize,
+void win32_check_window(void *data,
+      bool *quit, bool *resize,
       unsigned *width, unsigned *height)
 {
 #if !defined(_XBOX)
-   *quit            = g_win32_quit;
+   win32_common_state_t 
+      *g_win32            = (win32_common_state_t*)&win32_st;
+   bool video_is_threaded = video_driver_is_threaded();
+   if (video_is_threaded)
+      ui_companion_win32.application->process_events();
+   *quit                  = g_win32->quit;
 
-   if (g_win32_resized)
+   if (g_win32->resized)
    {
       *resize             = true;
       *width              = g_win32_resize_width;
       *height             = g_win32_resize_height;
-      g_win32_resized     = false;
+      g_win32->resized    = false;
    }
 #endif
 }
@@ -1149,32 +1532,40 @@ bool win32_suppress_screensaver(void *data, bool enable)
       {
 #if _WIN32_WINNT >= 0x0601
          /* Windows 7, 8, 10 codepath */
-         typedef HANDLE (WINAPI * PowerCreateRequestPtr)(REASON_CONTEXT *context);
-         typedef BOOL   (WINAPI * PowerSetRequestPtr)(HANDLE PowerRequest,
-               POWER_REQUEST_TYPE RequestType);
+         typedef HANDLE(WINAPI * PowerCreateRequestPtr)(REASON_CONTEXT *context);
+         typedef BOOL(WINAPI * PowerSetRequestPtr)(HANDLE PowerRequest,
+            POWER_REQUEST_TYPE RequestType);
+         PowerCreateRequestPtr powerCreateRequest;
+         PowerSetRequestPtr    powerSetRequest;
          HMODULE kernel32 = GetModuleHandle("kernel32.dll");
-         PowerCreateRequestPtr powerCreateRequest =
-            (PowerCreateRequestPtr)GetProcAddress(kernel32, "PowerCreateRequest");
-         PowerSetRequestPtr    powerSetRequest =
-            (PowerSetRequestPtr)GetProcAddress(kernel32, "PowerSetRequest");
 
-         if (powerCreateRequest && powerSetRequest)
+         if (kernel32)
          {
-            POWER_REQUEST_CONTEXT RequestContext;
-            HANDLE Request;
+            powerCreateRequest =
+               (PowerCreateRequestPtr)GetProcAddress(
+                     kernel32, "PowerCreateRequest");
+            powerSetRequest =
+               (PowerSetRequestPtr)GetProcAddress(
+                     kernel32, "PowerSetRequest");
 
-            RequestContext.Version                   = 
-               POWER_REQUEST_CONTEXT_VERSION;
-            RequestContext.Flags                     = 
-               POWER_REQUEST_CONTEXT_SIMPLE_STRING;
-            RequestContext.Reason.SimpleReasonString = (LPWSTR)
-               L"RetroArch running";
+            if (powerCreateRequest && powerSetRequest)
+            {
+               POWER_REQUEST_CONTEXT RequestContext;
+               HANDLE Request;
 
-            Request                                  = 
-               powerCreateRequest(&RequestContext);
+               RequestContext.Version                   =
+                  POWER_REQUEST_CONTEXT_VERSION;
+               RequestContext.Flags                     =
+                  POWER_REQUEST_CONTEXT_SIMPLE_STRING;
+               RequestContext.Reason.SimpleReasonString = (LPWSTR)
+                  L"RetroArch running";
 
-            powerSetRequest( Request, PowerRequestDisplayRequired);
-            return true;
+               Request                                  =
+                  powerCreateRequest(&RequestContext);
+
+               powerSetRequest( Request, PowerRequestDisplayRequired);
+               return true;
+            }
          }
 #endif
       }
@@ -1203,16 +1594,27 @@ void win32_set_style(MONITORINFOEX *current_mon, HMONITOR *hm_to_use,
    RECT *rect, RECT *mon_rect, DWORD *style)
 {
 #if !defined(_XBOX)
+   win32_common_state_t *g_win32    = (win32_common_state_t*)&win32_st;
+   bool position_set_from_config    = false;
+   settings_t *settings             = config_get_ptr();
+   bool video_window_save_positions = settings->bools.video_window_save_positions;
+   float video_refresh              = settings->floats.video_refresh_rate;
+   unsigned swap_interval           = settings->uints.video_swap_interval;
+   unsigned bfi                     = settings->uints.video_black_frame_insertion;
+   unsigned window_position_x       = settings->uints.window_position_x;
+   unsigned window_position_y       = settings->uints.window_position_y;
+   unsigned window_position_width   = settings->uints.window_position_width;
+   unsigned window_position_height  = settings->uints.window_position_height;
+
    if (fullscreen)
    {
-      settings_t *settings = config_get_ptr();
       /* Windows only reports the refresh rates for modelines as
        * an integer, so video_refresh_rate needs to be rounded. Also, account
-       * for black frame insertion using video_refresh_rate set to half
+       * for black frame insertion using video_refresh_rate set to a portion
        * of the display refresh rate, as well as higher vsync swap intervals. */
-      float refresh_mod    = settings->bools.video_black_frame_insertion ? 2.0f : 1.0f;
-      unsigned refresh     = roundf(settings->floats.video_refresh_rate
-            * refresh_mod * settings->uints.video_swap_interval);
+      float refresh_mod      = bfi + 1.0f;
+      unsigned refresh       = roundf(video_refresh * refresh_mod 
+            * swap_interval);
 
       if (windowed_full)
       {
@@ -1240,8 +1642,33 @@ void win32_set_style(MONITORINFOEX *current_mon, HMONITOR *hm_to_use,
 
       AdjustWindowRect(rect, *style, FALSE);
 
-      g_win32_resize_width  = *width   = rect->right  - rect->left;
-      g_win32_resize_height = *height  = rect->bottom - rect->top;
+      if (video_window_save_positions)
+      {
+         /* Set position from config */
+         int border_thickness  = GetSystemMetrics(SM_CXSIZEFRAME);
+         int title_bar_height  = GetSystemMetrics(SM_CYCAPTION);
+
+         g_win32->pos_x         = window_position_x;
+         g_win32->pos_y         = window_position_y;
+         g_win32->pos_width     = window_position_width
+            + border_thickness * 2;
+         g_win32->pos_height    = window_position_height
+            + border_thickness * 2 + title_bar_height;
+
+         if (g_win32->pos_width != 0 && g_win32->pos_height != 0)
+            position_set_from_config = true;
+      }
+
+      if (position_set_from_config)
+      {
+         g_win32_resize_width  = *width   = g_win32->pos_width;
+         g_win32_resize_height = *height  = g_win32->pos_height;
+      }
+      else
+      {
+         g_win32_resize_width  = *width   = rect->right  - rect->left;
+         g_win32_resize_height = *height  = rect->bottom - rect->top;
+      }
    }
 #endif
 }
@@ -1256,8 +1683,9 @@ void win32_set_window(unsigned *width, unsigned *height,
    {
       settings_t *settings      = config_get_ptr();
       const ui_window_t *window = ui_companion_driver_get_window_ptr();
+      bool ui_menubar_enable    = settings->bools.ui_menubar_enable;
 
-      if (!fullscreen && settings->bools.ui_menubar_enable)
+      if (!fullscreen && ui_menubar_enable)
       {
          RECT rc_temp;
          rc_temp.left   = 0;
@@ -1280,7 +1708,7 @@ void win32_set_window(unsigned *width, unsigned *height,
          window->set_focused(&main_window);
    }
 
-   win32_show_cursor(!fullscreen);
+   win32_show_cursor(NULL, !fullscreen);
 #endif
 }
 
@@ -1294,11 +1722,13 @@ bool win32_set_video_mode(void *data,
    RECT mon_rect;
    RECT rect;
    MONITORINFOEX current_mon;
-   unsigned mon_id       = 0;
-   bool windowed_full    = false;
-   HMONITOR hm_to_use    = NULL;
-   settings_t *settings  = config_get_ptr();
    int res               = 0;
+   unsigned mon_id       = 0;
+   HMONITOR hm_to_use    = NULL;
+   win32_common_state_t 
+      *g_win32           = (win32_common_state_t*)&win32_st;
+   settings_t *settings  = config_get_ptr();
+   bool windowed_full    = settings->bools.video_windowed_fullscreen;
 
    rect.left             = 0;
    rect.top              = 0;
@@ -1310,8 +1740,6 @@ bool win32_set_video_mode(void *data,
    mon_rect                    = current_mon.rcMonitor;
    g_win32_resize_width        = width;
    g_win32_resize_height       = height;
-
-   windowed_full               = settings->bools.video_windowed_fullscreen;
 
    win32_set_style(&current_mon, &hm_to_use, &width, &height,
          fullscreen, windowed_full, &rect, &mon_rect, &style);
@@ -1325,7 +1753,7 @@ bool win32_set_video_mode(void *data,
 
    /* Wait until context is created (or failed to do so ...).
     * Please don't remove the (res = ) as GetMessage can return -1. */
-   while (!g_win32_inited && !g_win32_quit
+   while (!g_win32_inited && !g_win32->quit
          && (res = GetMessage(&msg, main_window.hwnd, 0, 0)) != 0)
    {
       if (res == -1)
@@ -1338,7 +1766,7 @@ bool win32_set_video_mode(void *data,
       DispatchMessage(&msg);
    }
 
-   if (g_win32_quit)
+   if (g_win32->quit)
       return false;
 #endif
 
@@ -1362,20 +1790,11 @@ BOOL IsIconic(HWND hwnd)
 }
 #endif
 
-bool win32_has_focus(void)
+bool win32_has_focus(void *data)
 {
    if (g_win32_inited)
-   {
-#ifdef _XBOX
       if (GetForegroundWindow() == main_window.hwnd)
          return true;
-#else
-      const ui_window_t *window =
-         ui_companion_driver_get_window_ptr();
-      if (window)
-         return window->focused(&main_window);
-#endif
-   }
 
    return false;
 }
@@ -1391,14 +1810,18 @@ HWND win32_get_window(void)
 
 void win32_window_reset(void)
 {
-   g_win32_quit            = false;
+   win32_common_state_t 
+      *g_win32             = (win32_common_state_t*)&win32_st;
+
+   g_win32->quit           = false;
    g_win32_restore_desktop = false;
 }
 
 void win32_destroy_window(void)
 {
 #ifndef _XBOX
-   UnregisterClass("RetroArch", GetModuleHandle(NULL));
+   UnregisterClass("RetroArch", 
+         GetModuleHandle(NULL));
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x500 /* 2K */
    UnregisterDeviceNotification(notification_handler);
 #endif
@@ -1417,15 +1840,13 @@ void win32_get_video_output_prev(
    unsigned curr_width  = 0;
    unsigned curr_height = 0;
 
-   memset(&dm, 0, sizeof(dm));
+   if (win32_get_video_output(&dm, -1, sizeof(dm)))
+   {
+      curr_width  = dm.dmPelsWidth;
+      curr_height = dm.dmPelsHeight;
+   }
 
-   dm.dmSize            = sizeof(dm);
-
-   win32_get_video_output_size(&curr_width, &curr_height);
-
-   for (i = 0;
-         EnumDisplaySettings(NULL, i, &dm) != 0;
-         i++)
+   for (i = 0; win32_get_video_output(&dm, i, sizeof(dm)); i++)
    {
       if (     dm.dmPelsWidth  == curr_width
             && dm.dmPelsHeight == curr_height)
@@ -1454,23 +1875,22 @@ float win32_get_refresh_rate(void *data)
    float refresh_rate                      = 0.0f;
 #if _WIN32_WINNT >= 0x0601 || _WIN32_WINDOWS >= 0x0601 /* Win 7 */
    OSVERSIONINFO version_info;
-   DISPLAYCONFIG_TOPOLOGY_ID_CUSTOM TopologyID;
+   UINT32 TopologyID;
    unsigned int NumPathArrayElements       = 0;
    unsigned int NumModeInfoArrayElements   = 0;
    DISPLAYCONFIG_PATH_INFO_CUSTOM *PathInfoArray  = NULL;
    DISPLAYCONFIG_MODE_INFO_CUSTOM *ModeInfoArray  = NULL;
-   int result                              = 0;
 #ifdef HAVE_DYNAMIC
-	static QUERYDISPLAYCONFIG pQueryDisplayConfig;
-	static GETDISPLAYCONFIGBUFFERSIZES pGetDisplayConfigBufferSizes;
-	if (!pQueryDisplayConfig)
-		pQueryDisplayConfig = (QUERYDISPLAYCONFIG)GetProcAddress(GetModuleHandle("user32.dll"), "QueryDisplayConfig");
+    static QUERYDISPLAYCONFIG pQueryDisplayConfig;
+    static GETDISPLAYCONFIGBUFFERSIZES pGetDisplayConfigBufferSizes;
+    if (!pQueryDisplayConfig)
+        pQueryDisplayConfig = (QUERYDISPLAYCONFIG)GetProcAddress(GetModuleHandle("user32.dll"), "QueryDisplayConfig");
 
-	if (!pGetDisplayConfigBufferSizes)
-		pGetDisplayConfigBufferSizes = (GETDISPLAYCONFIGBUFFERSIZES)GetProcAddress(GetModuleHandle("user32.dll"), "GetDisplayConfigBufferSizes");
+    if (!pGetDisplayConfigBufferSizes)
+        pGetDisplayConfigBufferSizes = (GETDISPLAYCONFIGBUFFERSIZES)GetProcAddress(GetModuleHandle("user32.dll"), "GetDisplayConfigBufferSizes");
 #else
-	static QUERYDISPLAYCONFIG pQueryDisplayConfig                   = QueryDisplayConfig;
-	static GETDISPLAYCONFIGBUFFERSIZES pGetDisplayConfigBufferSizes = GetDisplayConfigBufferSizes;
+    static QUERYDISPLAYCONFIG pQueryDisplayConfig                   = QueryDisplayConfig;
+    static GETDISPLAYCONFIGBUFFERSIZES pGetDisplayConfigBufferSizes = GetDisplayConfigBufferSizes;
 #endif
 
    version_info.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
@@ -1481,11 +1901,10 @@ float win32_get_refresh_rate(void *data)
        (version_info.dwMajorVersion == 6 && version_info.dwMinorVersion < 1))
        return refresh_rate;
 
-   result = pGetDisplayConfigBufferSizes(QDC_DATABASE_CURRENT,
+   if (pGetDisplayConfigBufferSizes(QDC_DATABASE_CURRENT,
                                         &NumPathArrayElements,
-                                        &NumModeInfoArrayElements);
-
-   if (result != ERROR_SUCCESS)
+                                        &NumModeInfoArrayElements) 
+         != ERROR_SUCCESS)
       return refresh_rate;
 
    PathInfoArray = (DISPLAYCONFIG_PATH_INFO_CUSTOM *)
@@ -1493,18 +1912,15 @@ float win32_get_refresh_rate(void *data)
    ModeInfoArray = (DISPLAYCONFIG_MODE_INFO_CUSTOM *)
       malloc(sizeof(DISPLAYCONFIG_MODE_INFO_CUSTOM) * NumModeInfoArrayElements);
 
-   result = pQueryDisplayConfig(QDC_DATABASE_CURRENT,
+   if (pQueryDisplayConfig(QDC_DATABASE_CURRENT,
                                &NumPathArrayElements,
                                PathInfoArray,
                                &NumModeInfoArrayElements,
                                ModeInfoArray,
-                               &TopologyID);
-
-   if (result == ERROR_SUCCESS && NumPathArrayElements >= 1)
-   {
+                               &TopologyID) == ERROR_SUCCESS
+         && NumPathArrayElements >= 1)
       refresh_rate = (float) PathInfoArray[0].targetInfo.refreshRate.Numerator /
                              PathInfoArray[0].targetInfo.refreshRate.Denominator;
-   }
 
    free(ModeInfoArray);
    free(PathInfoArray);
@@ -1522,14 +1938,13 @@ void win32_get_video_output_next(
    unsigned curr_width  = 0;
    unsigned curr_height = 0;
 
-   memset(&dm, 0, sizeof(dm));
-   dm.dmSize = sizeof(dm);
+   if (win32_get_video_output(&dm, -1, sizeof(dm)))
+   {
+      curr_width  = dm.dmPelsWidth;
+      curr_height = dm.dmPelsHeight;
+   }
 
-   win32_get_video_output_size(&curr_width, &curr_height);
-
-   for (i = 0;
-         EnumDisplaySettings(NULL, i, &dm) != 0;
-         i++)
+   for (i = 0; win32_get_video_output(&dm, i, sizeof(dm)); i++)
    {
       if (found)
       {
@@ -1544,15 +1959,88 @@ void win32_get_video_output_next(
    }
 }
 
+static BOOL win32_internal_get_video_output(DWORD iModeNum, DEVMODE *dm)
+{
+#if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0500 /* 2K */
+   return EnumDisplaySettingsEx(NULL, iModeNum, dm, EDS_ROTATEDMODE);
+#else
+   return EnumDisplaySettings(NULL, iModeNum, dm);
+#endif
+}
+
+bool win32_get_video_output(DEVMODE *dm, int mode, size_t len)
+{
+   memset(dm, 0, len);
+   dm->dmSize  = len;
+
+   if (win32_internal_get_video_output((mode == -1) 
+            ? ENUM_CURRENT_SETTINGS 
+            : mode,
+            dm) == 0)
+      return false;
+   return true;
+}
+
 void win32_get_video_output_size(unsigned *width, unsigned *height)
 {
    DEVMODE dm;
-   memset(&dm, 0, sizeof(dm));
-   dm.dmSize  = sizeof(dm);
 
-   if (EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &dm) != 0)
+   if (win32_get_video_output(&dm, -1, sizeof(dm)))
    {
       *width  = dm.dmPelsWidth;
       *height = dm.dmPelsHeight;
    }
 }
+
+void win32_setup_pixel_format(HDC hdc, bool supports_gl)
+{
+   PIXELFORMATDESCRIPTOR pfd = {0};
+   pfd.nSize        = sizeof(PIXELFORMATDESCRIPTOR);
+   pfd.nVersion     = 1;
+   pfd.dwFlags      = PFD_DRAW_TO_WINDOW | PFD_DOUBLEBUFFER;
+   pfd.iPixelType   = PFD_TYPE_RGBA;
+   pfd.cColorBits   = 32;
+   pfd.cDepthBits   = 0;
+   pfd.cStencilBits = 0;
+   pfd.iLayerType   = PFD_MAIN_PLANE;
+
+   if (supports_gl)
+      pfd.dwFlags  |= PFD_SUPPORT_OPENGL;
+
+   SetPixelFormat(hdc, ChoosePixelFormat(hdc, &pfd), &pfd);
+}
+
+#ifndef __WINRT__
+unsigned short win32_get_langid_from_retro_lang(enum retro_language lang);
+
+bool win32_window_init(WNDCLASSEX *wndclass,
+      bool fullscreen, const char *class_name)
+{
+#if _WIN32_WINNT >= 0x0501
+   /* Use the language set in the config for the menubar... 
+    * also changes the console language. */
+   SetThreadUILanguage(win32_get_langid_from_retro_lang(
+            (enum retro_language)
+            *msg_hash_get_uint(MSG_HASH_USER_LANGUAGE)));
+#endif
+   wndclass->cbSize           = sizeof(WNDCLASSEX);
+   wndclass->style            = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+   wndclass->hInstance        = GetModuleHandle(NULL);
+   wndclass->hCursor          = LoadCursor(NULL, IDC_ARROW);
+   wndclass->lpszClassName    = class_name ? class_name : "RetroArch";
+   wndclass->hIcon            = LoadIcon(GetModuleHandle(NULL),
+                             MAKEINTRESOURCE(IDI_ICON));
+   wndclass->hIconSm          = (HICON)LoadImage(GetModuleHandle(NULL),
+                             MAKEINTRESOURCE(IDI_ICON), IMAGE_ICON, 16, 16, 0);
+   if (!fullscreen)
+      wndclass->hbrBackground = (HBRUSH)COLOR_WINDOW;
+
+   if (class_name)
+      wndclass->style         |= CS_CLASSDC;
+
+   if (!RegisterClassEx(wndclass))
+      return false;
+
+   return true;
+}
+#endif

@@ -73,7 +73,7 @@ typedef enum
     MBEDTLS_ECP_DP_CURVE25519,           /*!< Curve25519               */
     MBEDTLS_ECP_DP_SECP192K1,      /*!< 192-bits "Koblitz" curve */
     MBEDTLS_ECP_DP_SECP224K1,      /*!< 224-bits "Koblitz" curve */
-    MBEDTLS_ECP_DP_SECP256K1,      /*!< 256-bits "Koblitz" curve */
+    MBEDTLS_ECP_DP_SECP256K1       /*!< 256-bits "Koblitz" curve */
 } mbedtls_ecp_group_id;
 
 /**
@@ -661,17 +661,6 @@ int mbedtls_ecp_gen_key( mbedtls_ecp_group_id grp_id, mbedtls_ecp_keypair *key,
  *                  a MBEDTLS_ERR_ECP_XXX or MBEDTLS_ERR_MPI_XXX code.
  */
 int mbedtls_ecp_check_pub_priv( const mbedtls_ecp_keypair *pub, const mbedtls_ecp_keypair *prv );
-
-#if defined(MBEDTLS_SELF_TEST)
-
-/**
- * \brief          Checkup routine
- *
- * \return         0 if successful, or 1 if a test failed
- */
-int mbedtls_ecp_self_test( int verbose );
-
-#endif /* MBEDTLS_SELF_TEST */
 
 #ifdef __cplusplus
 }

@@ -35,18 +35,9 @@
 #include "mbedtls/bignum.h"
 #endif
 
-#if defined(MBEDTLS_PLATFORM_C)
-#include "mbedtls/platform.h"
-#else
 #include <stdlib.h>
-#define mbedtls_calloc    calloc
-#define mbedtls_free       free
-#endif
 
-/* Implementation that should never be optimized out by the compiler */
-static void mbedtls_zeroize( void *v, size_t n ) {
-    volatile unsigned char *p = (unsigned char*)v; while( n-- ) *p++ = 0;
-}
+#include "arc4_alt.h"
 
 /*
  * ASN.1 DER decoding routines
@@ -269,7 +260,7 @@ int mbedtls_asn1_get_sequence_of( unsigned char **p,
         /* Allocate and assign next pointer */
         if( *p < end )
         {
-            cur->next = (mbedtls_asn1_sequence*)mbedtls_calloc( 1,
+            cur->next = (mbedtls_asn1_sequence*)calloc( 1,
                                             sizeof( mbedtls_asn1_sequence ) );
 
             if( cur->next == NULL )
@@ -355,8 +346,8 @@ void mbedtls_asn1_free_named_data( mbedtls_asn1_named_data *cur )
     if( cur == NULL )
         return;
 
-    mbedtls_free( cur->oid.p );
-    mbedtls_free( cur->val.p );
+    free( cur->oid.p );
+    free( cur->val.p );
 
     mbedtls_zeroize( cur, sizeof( mbedtls_asn1_named_data ) );
 }
@@ -369,7 +360,7 @@ void mbedtls_asn1_free_named_data_list( mbedtls_asn1_named_data **head )
     {
         *head = cur->next;
         mbedtls_asn1_free_named_data( cur );
-        mbedtls_free( cur );
+        free( cur );
     }
 }
 

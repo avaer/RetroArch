@@ -7,20 +7,18 @@ PREFIX      := /usr
 INSTALLDIR  := $(PREFIX)/lib/retroarch/filters/video
 
 ifeq ($(platform),)
-platform = unix
-ifeq ($(shell uname -a),)
-   platform = win
-else ifneq ($(findstring MINGW,$(shell uname -a)),)
-   platform = win
-else ifneq ($(findstring Darwin,$(shell uname -a)),)
-   platform = osx
-   arch = intel
-ifeq ($(shell uname -p),powerpc)
-   arch = ppc
-endif
-else ifneq ($(findstring win,$(shell uname -a)),)
-   platform = win
-endif
+   platform = unix
+   ifeq ($(shell uname -s),)
+      platform = win
+   else ifneq ($(findstring Darwin,$(shell uname -s)),)
+      platform = osx
+      arch     = intel
+      ifeq ($(shell uname -p),powerpc)
+         arch = ppc
+      endif
+   else ifneq ($(findstring MINGW,$(shell uname -s)),)
+      platform = win
+   endif
 endif
 
 ifeq ($(platform),gcc)
@@ -64,13 +62,18 @@ asflags := $(ASFLAGS) -fPIC  $(extra_flags)
 objects :=
 flags   += -std=c99
 
-
 ifeq (1,$(use_neon))
 ASMFLAGS := -INEON/asm
 asflags += -mfpu=neon
 endif
-           
-objects += blargg_ntsc_snes.$(DYLIB) phosphor2x.$(DYLIB) epx.$(DYLIB) lq2x.$(DYLIB) 2xsai.$(DYLIB) super2xsai.$(DYLIB) supereagle.$(DYLIB) 2xbr.$(DYLIB) darken.$(DYLIB) scale2x.$(DYLIB)
+
+objects += blargg_ntsc_snes.$(DYLIB) phosphor2x.$(DYLIB) epx.$(DYLIB) lq2x.$(DYLIB) \
+	   2xsai.$(DYLIB) super2xsai.$(DYLIB) supereagle.$(DYLIB) 2xbr.$(DYLIB) \
+	   darken.$(DYLIB) scale2x.$(DYLIB) normal2x.$(DYLIB) \
+	   normal2x_width.$(DYLIB) normal2x_height.$(DYLIB) \
+	   scanline2x.$(DYLIB) grid2x.$(DYLIB) grid3x.$(DYLIB) \
+	   gameboy3x.$(DYLIB) gameboy4x.$(DYLIB) \
+	   dot_matrix_3x.$(DYLIB) dot_matrix_4x.$(DYLIB)
 
 all: build;
 

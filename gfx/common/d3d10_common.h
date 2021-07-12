@@ -22,6 +22,8 @@
 
 #include "../drivers_shader/slang_process.h"
 
+#define D3D10_MAX_GPU_COUNT 16
+
 typedef const ID3D10SamplerState*       D3D10SamplerStateRef;
 
 typedef ID3D10InputLayout*       D3D10InputLayout;
@@ -53,7 +55,6 @@ typedef ID3D10Multithread*        D3D10Multithread;
 typedef ID3D10Debug*              D3D10Debug;
 typedef ID3D10SwitchToRef*        D3D10SwitchToRef;
 typedef ID3D10InfoQueue*          D3D10InfoQueue;
-
 
 #if !defined(__cplusplus) || defined(CINTERFACE)
 static INLINE void D3D10SetResourceEvictionPriority(D3D10Resource resource, UINT eviction_priority)
@@ -1061,7 +1062,7 @@ static INLINE HRESULT D3D10CreateTexture2DShaderResourceView(
 #include <retro_math.h>
 #include <gfx/math/matrix_4x4.h>
 
-#include "../video_driver.h"
+#include "../../retroarch.h"
 
 typedef struct d3d10_vertex_t
 {
@@ -1118,9 +1119,6 @@ typedef struct ALIGN(16)
    float time;
 } d3d10_uniform_t;
 
-static_assert(
-      (!(sizeof(d3d10_uniform_t) & 0xF)), "sizeof(d3d10_uniform_t) must be a multiple of 16");
-
 typedef struct d3d10_shader_t
 {
    D3D10VertexShader   vs;
@@ -1155,6 +1153,12 @@ typedef struct
    bool                  resize_render_targets;
    bool                  init_history;
    d3d10_shader_t        shaders[GFX_MAX_SHADERS];
+#ifdef __WINRT__
+   DXGIFactory2 factory;
+#else
+   DXGIFactory factory;
+#endif
+   DXGIAdapter adapter;
 
 	struct
    {
@@ -1203,13 +1207,18 @@ typedef struct
       D3D10_VIEWPORT             viewport;
       pass_semantics_t           semantics;
       uint32_t                   frame_count;
+      int32_t                    frame_direction;
    } pass[GFX_MAX_SHADERS];
 
    struct video_shader* shader_preset;
    d3d10_texture_t      luts[GFX_MAX_TEXTURES];
+   struct string_list *gpu_list;
+   IDXGIAdapter1 *adapters[D3D10_MAX_GPU_COUNT];
+   IDXGIAdapter1 *current_adapter;
 } d3d10_video_t;
 
 void d3d10_init_texture(D3D10Device device, d3d10_texture_t* texture);
+
 static INLINE void d3d10_release_texture(d3d10_texture_t* texture)
 {
    Release(texture->handle);

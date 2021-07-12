@@ -22,76 +22,33 @@
 #include <retro_common_api.h>
 #include <retro_miscellaneous.h>
 
-#include <queues/message_queue.h>
 #include <queues/task_queue.h>
 
 #ifdef HAVE_CONFIG_H
 #include "../config.h"
 #endif
 
-#include "../content.h"
-#include "../core_type.h"
-#include "../msg_hash.h"
+#if defined(HAVE_NETWORKING)
+#include "../core_updater_list.h"
+#endif
+
+#include "../playlist.h"
+
+/* Required for task_push_core_backup() */
+#include "../core_backup.h"
+
+#if defined(HAVE_OVERLAY)
+#include "../input/input_overlay.h"
+#endif
 
 RETRO_BEGIN_DECLS
 
-typedef int (*transfer_cb_t)(void *data, size_t len);
-
-enum content_mode_load
+typedef struct nbio_buf
 {
-   CONTENT_MODE_LOAD_NONE = 0,
-   CONTENT_MODE_LOAD_CONTENT_WITH_CURRENT_CORE_FROM_MENU,
-   CONTENT_MODE_LOAD_CONTENT_WITH_FFMPEG_CORE_FROM_MENU,
-   CONTENT_MODE_LOAD_CONTENT_WITH_IMAGEVIEWER_CORE_FROM_MENU
-};
-
-enum nbio_status_enum
-{
-   NBIO_STATUS_INIT = 0,
-   NBIO_STATUS_TRANSFER,
-   NBIO_STATUS_TRANSFER_PARSE,
-   NBIO_STATUS_TRANSFER_FINISHED
-};
-
-enum nbio_status_flags
-{
-   NBIO_FLAG_NONE = 0,
-   NBIO_FLAG_IMAGE_SUPPORTS_RGBA
-};
-
-enum nbio_type
-{
-   NBIO_TYPE_NONE = 0,
-   NBIO_TYPE_JPEG,
-   NBIO_TYPE_PNG,
-   NBIO_TYPE_TGA,
-   NBIO_TYPE_BMP,
-   NBIO_TYPE_OGG,
-   NBIO_TYPE_FLAC,
-   NBIO_TYPE_MP3,
-   NBIO_TYPE_MOD,
-   NBIO_TYPE_WAV
-};
-
-typedef struct nbio_handle
-{
-   enum nbio_type type;
-   bool is_finished;
-   unsigned status;
-   unsigned pos_increment;
-   uint32_t status_flags;
-   void *data;
+   void *buf;
    char *path;
-   struct nbio_t *handle;
-   msg_queue_t *msg_queue;
-   transfer_cb_t  cb;
-} nbio_handle_t;
-
-typedef struct
-{
-   enum msg_hash_enums enum_idx;
-   char path[PATH_MAX_LENGTH];
-} file_transfer_t;
+   unsigned bufsize;
+} nbio_buf_t;
 
 #ifdef HAVE_NETWORKING
 typedef struct
@@ -103,25 +60,97 @@ typedef struct
 void *task_push_http_transfer(const char *url, bool mute, const char *type,
       retro_task_callback_t cb, void *userdata);
 
+void *task_push_http_transfer_with_user_agent(const char *url, bool mute, const char *type,
+      const char* user_agent, retro_task_callback_t cb, void *userdata);
+
 void *task_push_http_post_transfer(const char *url, const char *post_data, bool mute, const char *type,
       retro_task_callback_t cb, void *userdata);
 
+void *task_push_http_post_transfer_with_user_agent(const char* url, const char* post_data, bool mute,
+   const char* type, const char* user_agent, retro_task_callback_t cb, void* user_data);
+
 task_retriever_info_t *http_task_get_transfer_list(void);
+
+bool task_push_bluetooth_scan(retro_task_callback_t cb);
 
 bool task_push_wifi_scan(retro_task_callback_t cb);
 
 bool task_push_netplay_lan_scan(retro_task_callback_t cb);
 
 bool task_push_netplay_crc_scan(uint32_t crc, char* name,
-      const char *hostname, const char *corename);
+      const char *hostname, const char *corename, const char* subsystem);
 
 bool task_push_netplay_lan_scan_rooms(retro_task_callback_t cb);
 
 bool task_push_netplay_nat_traversal(void *nat_traversal_state, uint16_t port);
 
+/* Core updater tasks */
+
+void *task_push_get_core_updater_list(
+      core_updater_list_t* core_list, bool mute, bool refresh_menu);
+/* Note: If crc is set to 0, crc of local core file
+ * will be calculated automatically */
+void *task_push_core_updater_download(
+      core_updater_list_t* core_list,
+      const char *filename, uint32_t crc, bool mute,
+      bool auto_backup, size_t auto_backup_history_size,
+      const char *path_dir_libretro,
+      const char *path_dir_core_assets);
+void task_push_update_installed_cores(
+      bool auto_backup, size_t auto_backup_history_size,
+      const char *path_dir_libretro,
+      const char *path_dir_core_assets);
+#if defined(ANDROID)
+void *task_push_play_feature_delivery_core_install(
+      core_updater_list_t* core_list,
+      const char *filename,
+      bool mute);
+void task_push_play_feature_delivery_switch_installed_cores(
+      const char *path_dir_libretro,
+      const char *path_libretro_info);
 #endif
 
+bool task_push_pl_entry_thumbnail_download(
+      const char *system,
+      playlist_t *playlist,
+      unsigned idx,
+      bool overwrite,
+      bool mute);
+
+#ifdef HAVE_MENU
+bool task_push_pl_thumbnail_download(
+      const char *system,
+      const playlist_config_t *playlist_config,
+      const char *dir_thumbnails);
+#endif
+
+#endif
+
+/* Core backup/restore tasks */
+
+/* Note 1: If crc is set to 0, crc of core_path file will
+ * be calculated automatically
+ * Note 2: If core_display_name is set to NULL, display
+ * name will be determined automatically
+ * > core_display_name *must* be set to a non-empty
+ *   string if task_push_core_backup() is *not* called
+ *   on the main thread */
+void *task_push_core_backup(
+      const char *core_path, const char *core_display_name,
+      uint32_t crc, enum core_backup_mode backup_mode,
+      size_t auto_backup_history_size,
+      const char *dir_core_assets, bool mute);
+/* Note: If 'core_loaded' is true, menu stack should be
+ * flushed if task_push_core_restore() returns true */
+bool task_push_core_restore(const char *backup_path,
+      const char *dir_libretro,
+      bool *core_loaded);
+
+bool task_push_pl_manager_reset_cores(const playlist_config_t *playlist_config);
+bool task_push_pl_manager_clean_playlist(const playlist_config_t *playlist_config);
+
 bool task_push_image_load(const char *fullpath,
+      bool supports_rgba, unsigned upscale_threshold,
       retro_task_callback_t cb, void *userdata);
 
 #ifdef HAVE_LIBRETRODB
@@ -133,101 +162,55 @@ bool task_push_dbscan(
       retro_task_callback_t cb);
 #endif
 
+bool task_push_manual_content_scan(
+      const playlist_config_t *playlist_config,
+      const char *playlist_directory);
+
 #ifdef HAVE_OVERLAY
 bool task_push_overlay_load_default(
-        retro_task_callback_t cb, void *user_data);
+      retro_task_callback_t cb,
+      const char *overlay_path,
+      bool overlay_hide_in_menu,
+      bool overlay_hide_when_gamepad_connected,
+      bool input_overlay_enable,
+      float input_overlay_opacity,
+      overlay_layout_desc_t *layout_desc,
+      void *user_data);
 #endif
+
+bool patch_content(
+      bool is_ips_pref,
+      bool is_bps_pref,
+      bool is_ups_pref,
+      const char *name_ips,
+      const char *name_bps,
+      const char *name_ups,
+      uint8_t **buf,
+      void *data);
 
 bool task_check_decompress(const char *source_file);
 
-bool task_push_decompress(
+void *task_push_decompress(
       const char *source_file,
       const char *target_dir,
       const char *target_file,
       const char *subdir,
       const char *valid_ext,
       retro_task_callback_t cb,
-      void *user_data);
-
-bool task_push_load_content_with_current_core_from_companion_ui(
-      const char *fullpath,
-      content_ctx_info_t *content_info,
-      enum rarch_core_type type,
-      retro_task_callback_t cb,
-      void *user_data);
-
-bool task_push_load_content_from_cli(
-      const char *core_path,
-      const char *fullpath,
-      content_ctx_info_t *content_info,
-      enum rarch_core_type type,
-      retro_task_callback_t cb,
-      void *user_data);
-
-bool task_push_load_new_core(
-      const char *core_path,
-      const char *fullpath,
-      content_ctx_info_t *content_info,
-      enum rarch_core_type type,
-      retro_task_callback_t cb,
-      void *user_data);
-
-bool task_push_start_builtin_core(content_ctx_info_t *content_info,
-      enum rarch_core_type type,
-      retro_task_callback_t cb,
-      void *user_data);
-
-bool task_push_start_current_core(content_ctx_info_t *content_info);
-
-bool task_push_start_dummy_core(content_ctx_info_t *content_info);
-
-bool task_push_load_content_with_new_core_from_companion_ui(
-      const char *core_path,
-      const char *fullpath,
-      content_ctx_info_t *content_info,
-      retro_task_callback_t cb,
-      void *user_data);
-
-#ifdef HAVE_MENU
-bool task_push_load_content_with_new_core_from_menu(
-      const char *core_path,
-      const char *fullpath,
-      content_ctx_info_t *content_info,
-      enum rarch_core_type type,
-      retro_task_callback_t cb,
-      void *user_data);
-
-bool task_push_load_content_from_playlist_from_menu(
-      const char *core_path,
-      const char *fullpath,
-      const char *label,
-      content_ctx_info_t *content_info,
-      retro_task_callback_t cb,
-      void *user_data);
-
-bool task_push_load_content_with_core_from_menu(
-      const char *fullpath,
-      content_ctx_info_t *content_info,
-      enum rarch_core_type type,
-      retro_task_callback_t cb,
-      void *user_data);
-bool task_push_load_subsystem_with_core_from_menu(
-      const char *fullpath,
-      content_ctx_info_t *content_info,
-      enum rarch_core_type type,
-      retro_task_callback_t cb,
-      void *user_data);
-#endif
+      void *user_data,
+      void *frontend_userdata,
+      bool mute);
 
 void task_file_load_handler(retro_task_t *task);
 
-bool task_audio_mixer_load_handler(retro_task_t *task);
+bool take_screenshot(
+      const char *screenshot_dir,
+      const char *path, bool silence,
+      bool has_valid_framebuffer, bool fullpath, bool use_thread);
 
-bool take_screenshot(const char *path, bool silence, bool has_valid_framebuffer);
+bool event_load_save_files(bool is_sram_load_disabled);
 
-bool event_load_save_files(void);
-
-bool event_save_files(void);
+bool event_save_files(bool sram_used);
 
 void path_init_savefile_rtc(const char *savefile_path);
 
@@ -235,37 +218,25 @@ void *savefile_ptr_get(void);
 
 void path_init_savefile_new(void);
 
-bool input_is_autoconfigured(unsigned i);
-
-unsigned input_autoconfigure_get_device_name_index(unsigned i);
-
-void input_autoconfigure_reset(void);
-
-bool input_autoconfigure_connect(
+/* Autoconfigure tasks */
+extern const char* const input_builtin_autoconfs[];
+void input_autoconfigure_blissbox_override_handler(
+      int vid, int pid, char *device_name, size_t len);
+void input_autoconfigure_connect(
       const char *name,
       const char *display_name,
       const char *driver,
-      unsigned idx,
+      unsigned port,
       unsigned vid,
       unsigned pid);
+bool input_autoconfigure_disconnect(
+      unsigned port, const char *name);
 
-bool input_autoconfigure_disconnect(unsigned i, const char *ident);
+void set_save_state_in_background(bool state);
 
-bool input_autoconfigure_get_swap_override(void);
-
-void input_autoconfigure_joypad_reindex_devices(void);
-
-void task_push_get_powerstate(void);
-
-enum frontend_powerstate get_last_powerstate(int *percent);
-
-bool task_push_audio_mixer_load_and_play(
-      const char *fullpath, retro_task_callback_t cb, void *user_data);
-
-bool task_push_audio_mixer_load(
-      const char *fullpath, retro_task_callback_t cb, void *user_data);
-
-extern const char* const input_builtin_autoconfs[];
+#ifdef HAVE_CDROM
+void task_push_cdrom_dump(const char *drive);
+#endif
 
 RETRO_END_DECLS
 

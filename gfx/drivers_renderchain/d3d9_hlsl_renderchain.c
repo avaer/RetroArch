@@ -32,11 +32,8 @@
 #include "../common/d3d_common.h"
 #include "../common/d3d9_common.h"
 
-#include "../video_driver.h"
-
 #include "../video_shader_parse.h"
 #include "../../managers/state_manager.h"
-#include "../../configuration.h"
 #include "../../retroarch.h"
 #include "../../verbosity.h"
 
@@ -62,7 +59,7 @@ static void *d3d9_hlsl_get_constant_by_name(void *data, const char *name)
 static INLINE void d3d9_hlsl_set_param_2f(void *data, void *userdata, const char *name, const void *values)
 {
    LPD3DXCONSTANTTABLE prog = (LPD3DXCONSTANTTABLE)data;
-   D3DXHANDLE param         = d3d9_hlsl_get_constant_by_name(prog, name);
+   D3DXHANDLE param         = (D3DXHANDLE)d3d9_hlsl_get_constant_by_name(prog, name);
    if (param)
       d3d9x_constant_table_set_float_array((LPDIRECT3DDEVICE9)userdata, prog, (void*)param, values, 2);
 }
@@ -70,7 +67,7 @@ static INLINE void d3d9_hlsl_set_param_2f(void *data, void *userdata, const char
 static INLINE void d3d9_hlsl_set_param_1f(void *data, void *userdata, const char *name, const void *value)
 {
    LPD3DXCONSTANTTABLE prog = (LPD3DXCONSTANTTABLE)data;
-   D3DXHANDLE param         = d3d9_hlsl_get_constant_by_name(prog, name);
+   D3DXHANDLE param         = (D3DXHANDLE)d3d9_hlsl_get_constant_by_name(prog, name);
    float *val               = (float*)value;
    if (param)
       d3d9x_constant_table_set_float(prog, (LPDIRECT3DDEVICE9)userdata, (void*)param, *val);
@@ -90,9 +87,9 @@ static INLINE void d3d9_hlsl_set_param_matrix(void *data, void *userdata,
       const char *name, const void *values)
 {
    LPD3DXCONSTANTTABLE prog = (LPD3DXCONSTANTTABLE)data;
-   D3DXHANDLE param         = d3d9_hlsl_get_constant_by_name(prog, name);
+   D3DXHANDLE param         = (D3DXHANDLE)d3d9_hlsl_get_constant_by_name(prog, name);
    if (param)
-      d3d9x_constant_table_set_matrix((LPDIRECT3DDEVICE9)userdata, prog, 
+      d3d9x_constant_table_set_matrix((LPDIRECT3DDEVICE9)userdata, prog,
             (void*)param, (D3DMATRIX*)values);
 }
 
@@ -220,7 +217,7 @@ static void hlsl_d3d9_renderchain_set_shader_params(
    frame_cnt = chain->frame_count;
 
    if (pass->info.pass->frame_count_mod)
-      frame_cnt         = chain->frame_count 
+      frame_cnt         = chain->frame_count
          % pass->info.pass->frame_count_mod;
 
    d3d9_hlsl_set_param_1f(fprg, dev, "IN.frame_count",     &frame_cnt);
@@ -249,9 +246,9 @@ static bool hlsl_d3d9_renderchain_create_first_pass(
       unsigned _fmt)
 {
    unsigned i;
-   struct shader_pass pass;
-   unsigned fmt = 
-      (_fmt == RETRO_PIXEL_FORMAT_RGB565) ? 
+   struct shader_pass pass = { 0 };
+   unsigned fmt =
+      (_fmt == RETRO_PIXEL_FORMAT_RGB565) ?
       d3d9_get_rgb565_format() : d3d9_get_xrgb8888_format();
 
    pass.info        = *info;
@@ -318,7 +315,6 @@ static void hlsl_d3d9_renderchain_calc_and_set_shader_mvp(
    d3d9_hlsl_set_param_matrix(pass->vtable,
          chain->chain.dev, "modelViewProj", (const void*)&matrix);
 }
-
 
 static void hlsl_d3d9_renderchain_set_vertices(
       d3d9_video_t *d3d,
@@ -390,7 +386,6 @@ static void d3d9_hlsl_destroy_resources(hlsl_renderchain_t *chain)
 
 static void hlsl_d3d9_renderchain_free(void *data)
 {
-   unsigned i;
    hlsl_renderchain_t *chain = (hlsl_renderchain_t*)data;
 
    if (!chain)
@@ -423,7 +418,6 @@ static bool hlsl_d3d9_renderchain_init_shader(d3d9_video_t *d3d,
 
 static bool hlsl_d3d9_renderchain_init(
       d3d9_video_t *d3d,
-      const video_info_t *video_info,
       LPDIRECT3DDEVICE9 dev,
       const D3DVIEWPORT9 *final_viewport,
       const struct LinkInfo *info,
@@ -472,34 +466,9 @@ static void hlsl_d3d9_renderchain_set_final_viewport(
    d3d9_recompute_pass_sizes(chain->dev, chain, d3d);
 }
 
-static void d3d9_hlsl_renderchain_set_params(
-      d3d9_renderchain_t *chain,
-      LPDIRECT3DDEVICE9 dev,
-      struct shader_pass *pass,
-      state_tracker_t *tracker,
-      unsigned pass_index)
-{
-   unsigned i;
-   /* Set state parameters. */
-   /* Only query uniforms in first pass. */
-   static struct state_tracker_uniform tracker_info[GFX_MAX_VARIABLES];
-   static unsigned cnt = 0;
-
-   if (pass_index == 1)
-      cnt = state_tracker_get_uniform(tracker, tracker_info,
-            GFX_MAX_VARIABLES, chain->frame_count);
-
-   for (i = 0; i < cnt; i++)
-   {
-      d3d9_hlsl_set_param_2f(pass->fprg, dev, tracker_info[i].id, &tracker_info[i].value);
-      d3d9_hlsl_set_param_2f(pass->vprg, dev, tracker_info[i].id, &tracker_info[i].value);
-   }
-}
-
 static void hlsl_d3d9_renderchain_render_pass(
       hlsl_renderchain_t *chain,
       struct shader_pass *pass,
-      state_tracker_t *tracker,
       unsigned pass_index)
 {
    unsigned i;
@@ -557,9 +526,6 @@ static void hlsl_d3d9_renderchain_render_pass(
       d3d9_hlsl_renderchain_bind_pass(chain, chain->chain.dev, pass, pass_index);
 
 #endif
-   if (tracker)
-      d3d9_hlsl_renderchain_set_params(&chain->chain,
-            chain->chain.dev, pass, tracker, pass_index);
 
    d3d9_draw_primitive(chain->chain.dev, D3DPT_TRIANGLESTRIP, 0, 2);
 
@@ -573,8 +539,6 @@ static void hlsl_d3d9_renderchain_render_pass(
 
 static bool hlsl_d3d9_renderchain_render(
       d3d9_video_t *d3d,
-      const video_frame_info_t *video_info,
-      state_tracker_t *tracker,
       const void *frame,
       unsigned width, unsigned height,
       unsigned pitch, unsigned rotation)
@@ -624,7 +588,7 @@ static bool hlsl_d3d9_renderchain_render(
 
       d3d9_texture_get_surface_level(to_pass->tex, 0, (void**)&target);
 
-      d3d9_device_set_render_target(chain->chain.dev, 0, (void*)target);
+      d3d9_device_set_render_target(chain->chain.dev, 0, target);
 
       d3d9_convert_geometry(&from_pass->info,
             &out_width, &out_height,
@@ -653,7 +617,7 @@ static bool hlsl_d3d9_renderchain_render(
             chain->chain.frame_count, 0);
 
       hlsl_d3d9_renderchain_render_pass(chain,
-            from_pass, tracker,
+            from_pass, 
             i + 1);
 
       current_width = out_width;
@@ -662,7 +626,7 @@ static bool hlsl_d3d9_renderchain_render(
    }
 
    /* Final pass */
-   d3d9_device_set_render_target(chain->chain.dev, 0, (void*)back_buffer);
+   d3d9_device_set_render_target(chain->chain.dev, 0, back_buffer);
 
    last_pass = (struct shader_pass*)&chain->chain.passes->
       data[chain->chain.passes->count - 1];
@@ -683,7 +647,6 @@ static bool hlsl_d3d9_renderchain_render(
          chain->chain.frame_count, rotation);
 
    hlsl_d3d9_renderchain_render_pass(chain, last_pass,
-         tracker,
          chain->chain.passes->count);
 
    chain->chain.frame_count++;

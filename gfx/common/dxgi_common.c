@@ -27,10 +27,11 @@
 #include "../../configuration.h"
 #include "../../verbosity.h"
 #include "../../ui/ui_companion_driver.h"
-#include "../video_driver.h"
+#include "../../retroarch.h"
+#include "../frontend/frontend_driver.h"
 #include "win32_common.h"
 
-#ifdef HAVE_DYNAMIC
+#if defined(HAVE_DYNAMIC) && !defined(__WINRT__)
 #include <dynamic/dylib.h>
 
 HRESULT WINAPI CreateDXGIFactory1(REFIID riid, void** ppFactory)
@@ -281,80 +282,20 @@ void dxgi_copy(
       void*       dst_data)
 {
    int i, j;
-#if defined(PERF_START) && defined(PERF_STOP)
-   PERF_START();
-#endif
 
    switch ((unsigned)src_format)
    {
       FORMAT_SRC_LIST();
 
       default:
-         assert(0);
-         break;
+      assert(0);
+      break;
    }
-
-#if defined(PERF_START) && defined(PERF_STOP)
-   PERF_STOP();
-#endif
 }
+
 #ifdef _MSC_VER
 #pragma warning(default : 4293)
 #endif
-
-void dxgi_update_title(video_frame_info_t* video_info)
-{
-   const ui_window_t* window = ui_companion_driver_get_window_ptr();
-
-   if (video_info->fps_show)
-   {
-      MEMORYSTATUS stat;
-      char         mem[128];
-
-      mem[0] = '\0';
-
-      GlobalMemoryStatus(&stat);
-      snprintf(
-            mem, sizeof(mem), "|| MEM: %.2f/%.2fMB", stat.dwAvailPhys / (1024.0f * 1024.0f),
-            stat.dwTotalPhys / (1024.0f * 1024.0f));
-      strlcat(video_info->fps_text, mem, sizeof(video_info->fps_text));
-   }
-
-   if (window)
-   {
-      char title[128];
-
-      title[0] = '\0';
-
-      video_driver_get_window_title(title, sizeof(title));
-
-      if (title[0])
-         window->set_title(&main_window, title);
-   }
-}
-
-void dxgi_input_driver(const char* name, const input_driver_t** input, void** input_data)
-{
-#ifndef __WINRT__
-   settings_t* settings = config_get_ptr();
-
-#if _WIN32_WINNT >= 0x0501
-   /* winraw only available since XP */
-   if (string_is_equal(settings->arrays.input_driver, "raw"))
-   {
-      *input_data = input_winraw.init(name);
-      if (*input_data)
-      {
-         *input = &input_winraw;
-         return;
-      }
-   }
-#endif
-
-   *input_data = input_dinput.init(name);
-   *input      = *input_data ? &input_dinput : NULL;
-#endif
-}
 
 DXGI_FORMAT glslang_format_to_dxgi(glslang_format fmt)
 {

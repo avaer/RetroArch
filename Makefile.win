@@ -1,5 +1,8 @@
 TARGET = retroarch.exe
 
+HAVE_SCREENSHOTS = 1
+HAVE_AUDIOMIXER = 1
+HAVE_RWAV = 1
 HAVE_DINPUT = 1
 HAVE_XAUDIO = 1
 HAVE_DSOUND = 1
@@ -8,11 +11,19 @@ HAVE_OPENGL = 1
 HAVE_DYLIB = 1
 HAVE_D3D9 = 1
 HAVE_NETWORKING = 1
+HAVE_NETPLAYDISCOVERY = 1
 HAVE_STDIN_CMD = 1
 HAVE_COMMAND = 1
 HAVE_THREADS = 1
+HAVE_MENU = 1
+HAVE_CONFIGFILE = 1
+HAVE_PATCH      = 1
+HAVE_REWIND     = 1
+HAVE_CHEATS     = 1
 HAVE_RGUI = 1
 HAVE_MATERIALUI = 1
+HAVE_DSP_FILTER = 1
+HAVE_VIDEO_FILTER = 1
 HAVE_7ZIP = 1
 HAVE_PYTHON = 0
 DYNAMIC = 1
@@ -30,9 +41,7 @@ HAVE_FREETYPE := 1
 HAVE_FFMPEG   := 0
 
 HAVE_CG       := 1
-HAVE_LIBXML2  := 0
 HAVE_ZLIB     := 1
-WANT_ZLIB     := 1
 HAVE_CC_RESAMPLER := 1
 
 ifeq ($(HAVE_CG), 1)
@@ -44,11 +53,6 @@ FREETYPE_CFLAGS  := -DHAVE_FREETYPE -Ifreetype2
 FREETYPE_LIBS    := -lfreetype
 endif
 
-ifeq ($(HAVE_LIBXML2), 1)
-LIBXML2_CFLAGS   := -Ilibxml2 -DHAVE_LIBXML2 -DHAVE_GLSL
-LIBXML2_LIBS     := -lxml2 -liconv
-endif
-
 ifeq ($(HAVE_SDL), 1)
 SDL_LIBS         := -lSDL
 SDL_CFLAGS       := -ISDL -DHAVE_SDL
@@ -58,6 +62,20 @@ endif
 ifeq ($(HAVE_SDL2), 1)
 SDL2_LIBS        := -lSDL2
 SDL2_CFLAGS      := -ISDL2 -DHAVE_SDL2
+endif
+
+ifeq ($(HAVE_D3D8), 1)
+D3D8_LIBS        := -ld3d8
+ifeq ($(HAVE_D3DX), 1)
+D3DX8_LIBS       := -ld3dx8
+endif
+endif
+
+ifeq ($(HAVE_D3D9), 1)
+D3D9_LIBS        := -ld3d9
+ifeq ($(HAVE_D3DX), 1)
+D3DX9_LIBS       := -ld3dx9
+endif
 endif
 
 ifeq ($(HAVE_RSOUND), 1)
@@ -84,7 +102,9 @@ OBJDIR           := obj-w32
 OS               := Win32
 OBJ              :=
 LIBS             := -lm
-DEFINES          := -I. -Ilibretro-common/include -DRARCH_INTERNAL -DHAVE_OVERLAY
+DEFINES			  :=
+DEFINES          += -I. -Ilibretro-common/include -Ilibretro-common/include/compat/zlib -DRARCH_INTERNAL -DHAVE_SCREENSHOTS -DHAVE_OVERLAY
+#DEFINES			  += -DHAVE_VIDEO_LAYOUT
 LDFLAGS          := -L. -static-libgcc
 
 include Makefile.common
@@ -100,7 +120,6 @@ else
    CXX = g++
    WINDRES = windres
 endif
-
 
 libretro ?= -lretro
 
@@ -122,7 +141,7 @@ else
    CXXFLAGS += -O3 -ffast-math
 endif
 
-CFLAGS += -Wall -Wno-unused-result -Wno-unused-variable -I. -Ideps 
+CFLAGS += $(DEF_FLAGS) -Wall -Wno-unused-result -Wno-unused-variable -I. -Ideps
 CXXFLAGS += -Wall -Wno-unused-result -Wno-unused-variable -I. -Ideps -std=c++98 -D__STDC_CONSTANT_MACROS
 ifeq ($(CXX_BUILD), 1)
    CFLAGS += -std=c++98 -xc++ -D__STDC_CONSTANT_MACROS
@@ -148,13 +167,6 @@ $(OBJDIR)/%.o: %.c
 	@$(if $(Q), $(shell echo echo CC $<),)
 	$(Q)$(CC) $(CFLAGS) $(DEFINES) -MMD -c -o $@ $<
 
-.FORCE:
-
-$(OBJDIR)/git_version.o: git_version.c .FORCE
-	@-mkdir -p $(dir $@) || mkdir $(subst /,\,$(dir $@)) || echo .
-	@$(if $(Q), $(shell echo echo CC $<),)
-	$(Q)$(CC) $(CFLAGS) $(DEFINES) -MMD -c -o $@ $<
-
 $(OBJDIR)/%.o: %.cpp | $(dir $@)
 	@-mkdir -p $(dir $@) || mkdir $(subst /,\,$(dir $@)) || echo .
 	@$(if $(Q), $(shell echo echo CXX $<),)
@@ -171,4 +183,3 @@ clean:
 	rm -f *.d
 
 .PHONY: all install uninstall clean
-

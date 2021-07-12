@@ -1,6 +1,6 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- *  Copyright (C) 2016-2017 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -27,60 +27,78 @@
 
 #include "msg_hash.h"
 
+/* TODO/FIXME - static public global variable */
 static unsigned uint_user_language;
 
-int menu_hash_get_help_enum(enum msg_hash_enums msg, char *s, size_t len)
+int msg_hash_get_help_enum(enum msg_hash_enums msg, char *s, size_t len)
 {
-#ifdef HAVE_MENU
    int ret = -1;
 
 #ifdef HAVE_LANGEXTRA
    switch (uint_user_language)
    {
       case RETRO_LANGUAGE_FRENCH:
-         ret = menu_hash_get_help_fr_enum(msg, s, len);
+         ret = msg_hash_get_help_fr_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_GERMAN:
-         ret = menu_hash_get_help_de_enum(msg, s, len);
+         ret = msg_hash_get_help_de_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_SPANISH:
-         ret = menu_hash_get_help_es_enum(msg, s, len);
+         ret = msg_hash_get_help_es_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_ITALIAN:
-         ret = menu_hash_get_help_it_enum(msg, s, len);
+         ret = msg_hash_get_help_it_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_PORTUGUESE_BRAZIL:
-         ret = menu_hash_get_help_pt_br_enum(msg, s, len);
+         ret = msg_hash_get_help_pt_br_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_PORTUGUESE_PORTUGAL:
-         ret = menu_hash_get_help_pt_pt_enum(msg, s, len);
+         ret = msg_hash_get_help_pt_pt_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_DUTCH:
-         ret = menu_hash_get_help_nl_enum(msg, s, len);
+         ret = msg_hash_get_help_nl_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_ESPERANTO:
-         ret = menu_hash_get_help_eo_enum(msg, s, len);
+         ret = msg_hash_get_help_eo_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_POLISH:
-         ret = menu_hash_get_help_pl_enum(msg, s, len);
+         ret = msg_hash_get_help_pl_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_JAPANESE:
-         ret = menu_hash_get_help_jp_enum(msg, s, len);
+         ret = msg_hash_get_help_jp_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_KOREAN:
-         ret = menu_hash_get_help_ko_enum(msg, s, len);
+         ret = msg_hash_get_help_ko_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_VIETNAMESE:
-         ret = menu_hash_get_help_vn_enum(msg, s, len);
+         ret = msg_hash_get_help_vn_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_CHINESE_SIMPLIFIED:
-         ret = menu_hash_get_help_chs_enum(msg, s, len);
+         ret = msg_hash_get_help_chs_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_CHINESE_TRADITIONAL:
-         ret = menu_hash_get_help_cht_enum(msg, s, len);
+         ret = msg_hash_get_help_cht_enum(msg, s, len);
          break;
       case RETRO_LANGUAGE_ARABIC:
-         ret = menu_hash_get_help_ar_enum(msg, s, len);
+         ret = msg_hash_get_help_ar_enum(msg, s, len);
+         break;
+      case RETRO_LANGUAGE_GREEK:
+         ret = msg_hash_get_help_el_enum(msg, s, len);
+         break;
+      case RETRO_LANGUAGE_TURKISH:
+         ret = msg_hash_get_help_tr_enum(msg, s, len);
+         break;
+      case RETRO_LANGUAGE_SLOVAK:
+         ret = msg_hash_get_help_sk_enum(msg, s, len);
+         break;
+      case RETRO_LANGUAGE_PERSIAN:
+         ret = msg_hash_get_help_fa_enum(msg, s, len);
+         break;
+      case RETRO_LANGUAGE_HEBREW:
+         ret = msg_hash_get_help_he_enum(msg, s, len);
+         break;
+      case RETRO_LANGUAGE_ASTURIAN:
+         ret = msg_hash_get_help_ast_enum(msg, s, len);
          break;
       default:
          break;
@@ -90,10 +108,89 @@ int menu_hash_get_help_enum(enum msg_hash_enums msg, char *s, size_t len)
    if (ret == 0)
       return ret;
 
-   return menu_hash_get_help_us_enum(msg, s, len);
-#else
-   return 0;
-#endif
+   return msg_hash_get_help_us_enum(msg, s, len);
+}
+
+const char *get_user_language_iso639_1(bool limit)
+{
+   const char *voice;
+   voice = "en";
+   switch (uint_user_language)
+   {
+      case RETRO_LANGUAGE_FRENCH:
+         voice = "fr";
+         break;
+      case RETRO_LANGUAGE_GERMAN:
+         voice = "de";
+         break;
+      case RETRO_LANGUAGE_SPANISH:
+         voice = "es";
+         break;
+      case RETRO_LANGUAGE_ITALIAN:
+         voice = "it";
+         break;
+      case RETRO_LANGUAGE_PORTUGUESE_BRAZIL:
+         if (limit)
+            voice = "pt";
+         else
+            voice = "pt_br";
+         break;
+      case RETRO_LANGUAGE_PORTUGUESE_PORTUGAL:
+         if (limit)
+            voice = "pt";
+         else
+            voice = "pt_pt";
+         break;
+      case RETRO_LANGUAGE_DUTCH:
+         voice = "nl";
+         break;
+      case RETRO_LANGUAGE_ESPERANTO:
+         voice = "eo";
+         break;
+      case RETRO_LANGUAGE_POLISH:
+         voice = "pl";
+         break;
+      case RETRO_LANGUAGE_JAPANESE:
+         voice = "ja";
+         break;
+      case RETRO_LANGUAGE_KOREAN:
+         voice = "ko";
+         break;
+      case RETRO_LANGUAGE_VIETNAMESE:
+         voice = "vi";
+         break;
+      case RETRO_LANGUAGE_CHINESE_SIMPLIFIED:
+         voice = "zh";
+         break;
+      case RETRO_LANGUAGE_CHINESE_TRADITIONAL:
+         voice = "zh";
+         break;
+      case RETRO_LANGUAGE_ARABIC:
+         voice = "ar";
+         break;
+      case RETRO_LANGUAGE_GREEK:
+         voice = "el";
+         break;
+      case RETRO_LANGUAGE_TURKISH:
+         voice = "tr";
+         break;
+      case RETRO_LANGUAGE_SLOVAK:
+         voice = "sk";
+         break;
+      case RETRO_LANGUAGE_RUSSIAN:
+         voice = "ru";
+         break;
+      case RETRO_LANGUAGE_PERSIAN:
+         voice = "fa";
+         break;
+      case RETRO_LANGUAGE_HEBREW:
+         voice = "he";
+         break;
+      case RETRO_LANGUAGE_ASTURIAN:
+         voice = "ast";
+         break;
+   }
+   return voice;
 }
 
 const char *msg_hash_to_str(enum msg_hash_enums msg)
@@ -151,6 +248,24 @@ const char *msg_hash_to_str(enum msg_hash_enums msg)
       case RETRO_LANGUAGE_ARABIC:
          ret = msg_hash_to_str_ar(msg);
          break;
+      case RETRO_LANGUAGE_GREEK:
+         ret = msg_hash_to_str_el(msg);
+         break;
+      case RETRO_LANGUAGE_TURKISH:
+         ret = msg_hash_to_str_tr(msg);
+         break;
+      case RETRO_LANGUAGE_SLOVAK:
+         ret = msg_hash_to_str_sk(msg);
+         break;
+      case RETRO_LANGUAGE_PERSIAN:
+         ret = msg_hash_to_str_fa(msg);
+         break;
+      case RETRO_LANGUAGE_HEBREW:
+         ret = msg_hash_to_str_he(msg);
+         break;
+      case RETRO_LANGUAGE_ASTURIAN:
+         ret = msg_hash_to_str_ast(msg);
+         break;
       default:
          break;
    }
@@ -205,6 +320,8 @@ uint32_t msg_hash_calculate(const char *s)
 #define MENU_VALUE_FILE_JPEG_CAPS                                              0x7c87010bU
 #define MENU_VALUE_FILE_PNG                                                    0x0b889deaU
 #define MENU_VALUE_FILE_PNG_CAPS                                               0x0b88118aU
+#define MENU_VALUE_FILE_GONG                                                   0x7c977150U
+#define MENU_VALUE_FILE_GONG_CAPS                                              0x7c8558d0U
 #define MENU_VALUE_FILE_TGA                                                    0x0b88ae01U
 #define MENU_VALUE_FILE_BMP                                                    0x0b886244U
 
@@ -384,6 +501,11 @@ enum msg_file_type msg_hash_to_file_type(uint32_t hash)
          return FILE_TYPE_TGA;
       case MENU_VALUE_FILE_BMP:
          return FILE_TYPE_BMP;
+#endif
+#ifdef HAVE_EASTEREGG
+      case MENU_VALUE_FILE_GONG:
+      case MENU_VALUE_FILE_GONG_CAPS:
+         return FILE_TYPE_GONG;
 #endif
       case HASH_EXTENSION_CUE:
       case HASH_EXTENSION_CUE_UPPERCASE:

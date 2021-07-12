@@ -22,6 +22,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <string/stdstring.h>
+
 #include <ApplicationServices/ApplicationServices.h>
 
 #include <OpenGL/CGLTypes.h>
@@ -29,7 +31,7 @@
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl.h>
 
-#include "../video_driver.h"
+#include "../../retroarch.h"
 
 typedef int CGSConnectionID;
 typedef int CGSWindowID;
@@ -54,8 +56,6 @@ extern CGLError CGLSetSurface(CGLContextObj gl, CGSConnectionID cid, CGSWindowID
 }
 #endif
 
-static enum gfx_ctx_api cgl_api = GFX_CTX_NONE;
-
 typedef struct gfx_ctx_cgl_data
 {
    CGLContextObj glCtx;
@@ -63,7 +63,7 @@ typedef struct gfx_ctx_cgl_data
    int width, height;
 } gfx_ctx_cgl_data_t;
 
-static void gfx_ctx_cgl_swap_interval(void *data, unsigned interval)
+static void gfx_ctx_cgl_swap_interval(void *data, int interval)
 {
    gfx_ctx_cgl_data_t *cgl = (gfx_ctx_cgl_data_t*)data;
    GLint params            = interval;
@@ -79,7 +79,7 @@ static void gfx_ctx_cgl_get_video_size(void *data, unsigned *width, unsigned *he
 }
 
 static void gfx_ctx_cgl_check_window(void *data, bool *quit,
-      bool *resize, unsigned *width, unsigned *height, bool is_shutdown)
+      bool *resize, unsigned *width, unsigned *height)
 {
    unsigned new_width  = 0;
    unsigned new_height = 0;
@@ -95,7 +95,7 @@ static void gfx_ctx_cgl_check_window(void *data, bool *quit,
    }
 }
 
-static void gfx_ctx_cgl_swap_buffers(void *data, void *data2)
+static void gfx_ctx_cgl_swap_buffers(void *data)
 {
    gfx_ctx_cgl_data_t *cgl = (gfx_ctx_cgl_data_t*)data;
 
@@ -103,17 +103,8 @@ static void gfx_ctx_cgl_swap_buffers(void *data, void *data2)
 }
 
 static bool gfx_ctx_cgl_set_video_mode(void *data,
-      video_frame_info_t *video_info,
       unsigned width, unsigned height,
-      bool fullscreen)
-{
-   (void)data;
-   (void)width;
-   (void)height;
-   (void)fullscreen;
-
-   return true;
-}
+      bool fullscreen) { return true; }
 
 static void gfx_ctx_cgl_destroy(void *data)
 {
@@ -134,12 +125,7 @@ static void gfx_ctx_cgl_destroy(void *data)
 
 static void gfx_ctx_cgl_input_driver(void *data,
       const char *name,
-      const input_driver_t **input, void **input_data)
-{
-   (void)data;
-   (void)input;
-   (void)input_data;
-}
+      input_driver_t **input, void **input_data) { }
 
 static gfx_ctx_proc_t gfx_ctx_cgl_get_proc_address(const char *symbol_name)
 {
@@ -160,52 +146,24 @@ static gfx_ctx_proc_t gfx_ctx_cgl_get_proc_address(const char *symbol_name)
    return ret;
 }
 
-static bool gfx_ctx_cgl_has_focus(void *data)
-{
-   (void)data;
-   return true;
-}
-
-static bool gfx_ctx_cgl_suppress_screensaver(void *data, bool enable)
-{
-   (void)data;
-   (void)enable;
-   return false;
-}
-
-static enum gfx_ctx_api gfx_ctx_cgl_get_api(void *data)
-{
-   return cgl_api;
-}
+static bool gfx_ctx_cgl_has_focus(void *data) { return true; }
+static bool gfx_ctx_cgl_suppress_screensaver(void *data, bool enable) { return false; }
+static enum gfx_ctx_api gfx_ctx_cgl_get_api(void *data) { return GFX_CTX_OPENGL_API; }
 
 static bool gfx_ctx_cgl_bind_api(void *data, enum gfx_ctx_api api,
    unsigned major, unsigned minor)
 {
-   (void)data;
-   (void)api;
-   (void)major;
-   (void)minor;
-
    if (api == GFX_CTX_OPENGL_API)
-   {
-      cgl_api = api;
       return true;
-   }
 
    return false;
 }
 
-static void gfx_ctx_cgl_show_mouse(void *data, bool state)
-{
-   (void)data;
-   (void)state;
-}
+static void gfx_ctx_cgl_show_mouse(void *data, bool state) { }
 
 static void gfx_ctx_cgl_bind_hw_render(void *data, bool enable)
 {
    gfx_ctx_cgl_data_t *cgl = (gfx_ctx_cgl_data_t*)data;
-
-   (void)enable;
 
    CGLSetCurrentContext(cgl->glCtx);
 
@@ -288,7 +246,7 @@ static CGSSurfaceID attach_gl_context_to_window(CGLContextObj glCtx,
     return sid;
 }
 
-static void *gfx_ctx_cgl_init(video_frame_info_t *video_info, void *video_driver)
+static void *gfx_ctx_cgl_init(void *video_driver)
 {
    CGError err;
    gfx_ctx_cgl_data_t *cgl = (gfx_ctx_cgl_data_t*)calloc(1, sizeof(gfx_ctx_cgl_data_t));
@@ -326,14 +284,22 @@ error:
 static uint32_t gfx_ctx_cgl_get_flags(void *data)
 {
    uint32_t flags = 0;
-   BIT32_SET(flags, GFX_CTX_FLAGS_NONE);
+
+   if (string_is_equal(video_driver_get_ident(), "glcore"))
+   {
+#if defined(HAVE_SLANG) && defined(HAVE_SPIRV_CROSS)
+      BIT32_SET(flags, GFX_CTX_FLAGS_SHADERS_SLANG);
+#endif
+   }
+   else
+   {
+      BIT32_SET(flags, GFX_CTX_FLAGS_SHADERS_GLSL);
+   }
+
    return flags;
 }
 
-static void gfx_ctx_cgl_set_flags(void *data, uint32_t flags)
-{
-   (void)data;
-}
+static void gfx_ctx_cgl_set_flags(void *data, uint32_t flags) { }
 
 const gfx_ctx_driver_t gfx_ctx_cgl = {
    gfx_ctx_cgl_init,
@@ -354,7 +320,7 @@ const gfx_ctx_driver_t gfx_ctx_cgl = {
    NULL, /* set_resize */
    gfx_ctx_cgl_has_focus,
    gfx_ctx_cgl_suppress_screensaver,
-   NULL, /* has_windowed */
+   false, /* has_windowed */
    gfx_ctx_cgl_swap_buffers,
    gfx_ctx_cgl_input_driver,
    gfx_ctx_cgl_get_proc_address,

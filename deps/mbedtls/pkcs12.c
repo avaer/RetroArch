@@ -47,10 +47,7 @@
 #include "mbedtls/des.h"
 #endif
 
-/* Implementation that should never be optimized out by the compiler */
-static void mbedtls_zeroize( void *v, size_t n ) {
-    volatile unsigned char *p = v; while( n-- ) *p++ = 0;
-}
+#include "arc4_alt.h"
 
 static int pkcs12_parse_pbe_params( mbedtls_asn1_buf *params,
                                     mbedtls_asn1_buf *salt, int *iterations )
@@ -264,7 +261,7 @@ int mbedtls_pkcs12_derivation( unsigned char *data, size_t datalen,
     const mbedtls_md_info_t *md_info;
     mbedtls_md_context_t md_ctx;
 
-    // This version only allows max of 64 bytes of password or salt
+    /* This version only allows max of 64 bytes of password or salt */
     if( datalen > 128 || pwdlen > 64 || saltlen > 64 )
         return( MBEDTLS_ERR_PKCS12_BAD_INPUT_DATA );
 
@@ -291,7 +288,7 @@ int mbedtls_pkcs12_derivation( unsigned char *data, size_t datalen,
     p = data;
     while( datalen > 0 )
     {
-        // Calculate hash( diversifier || salt_block || pwd_block )
+        /* Calculate hash( diversifier || salt_block || pwd_block ) */
         if( ( ret = mbedtls_md_starts( &md_ctx ) ) != 0 )
             goto exit;
 
@@ -307,7 +304,7 @@ int mbedtls_pkcs12_derivation( unsigned char *data, size_t datalen,
         if( ( ret = mbedtls_md_finish( &md_ctx, hash_output ) ) != 0 )
             goto exit;
 
-        // Perform remaining ( iterations - 1 ) recursive hash calculations
+        /* Perform remaining ( iterations - 1 ) recursive hash calculations */
         for( i = 1; i < (size_t) iterations; i++ )
         {
             if( ( ret = mbedtls_md( md_info, hash_output, hlen, hash_output ) ) != 0 )
@@ -322,15 +319,15 @@ int mbedtls_pkcs12_derivation( unsigned char *data, size_t datalen,
         if( datalen == 0 )
             break;
 
-        // Concatenating copies of hash_output into hash_block (B)
+        /* Concatenating copies of hash_output into hash_block (B) */
         pkcs12_fill_buffer( hash_block, v, hash_output, hlen );
 
-        // B += 1
+        /* B += 1 */
         for( i = v; i > 0; i-- )
             if( ++hash_block[i - 1] != 0 )
                 break;
 
-        // salt_block += B
+        /* salt_block += B */
         c = 0;
         for( i = v; i > 0; i-- )
         {
@@ -339,7 +336,7 @@ int mbedtls_pkcs12_derivation( unsigned char *data, size_t datalen,
             salt_block[i - 1] = j & 0xFF;
         }
 
-        // pwd_block  += B
+        /* pwd_block  += B */
         c = 0;
         for( i = v; i > 0; i-- )
         {

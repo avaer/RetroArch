@@ -1,6 +1,6 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- *  Copyright (C) 2016-2017 - Brad Parker
+ *  Copyright (C) 2016-2019 - Brad Parker
  *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
@@ -26,6 +26,8 @@
 
 #include <libretro.h>
 
+#include "../../config.def.h"
+
 #include "../input_driver.h"
 #include "../input_keymaps.h"
 #include "../../tasks/tasks_internal.h"
@@ -36,8 +38,8 @@
 #define LOCK_VAR(x) LockData((void*)&x, sizeof(x))
 #define LOCK_FUNC(x) LockCode(x, (int)x##_End - (int)x)
 
+/* TODO/FIXME - static globals */
 static uint16_t normal_keys[LAST_KEYCODE + 1];
-
 static _go32_dpmi_seginfo old_kbd_int;
 static _go32_dpmi_seginfo kbd_int;
 
@@ -80,36 +82,26 @@ int LockCode(void *a, int size)
 static void keyb_int(void)
 {
    static unsigned char buffer = 0;
-   unsigned char rawcode;
-   unsigned char make_break;
-   int scancode;
-
-   rawcode = inp(0x60); /* read scancode from keyboard controller */
-   make_break = !(rawcode & 0x80); /* bit 7: 0 = make, 1 = break */
-   scancode = rawcode & 0x7F;
+   unsigned char rawcode       = inp(0x60);
+   /* read scancode from keyboard controller */
+   unsigned char make_break    = !(rawcode & 0x80);
+   /* bit 7: 0 = make, 1 = break */
+   int scancode                = rawcode & 0x7F;
 
    if (buffer == 0xE0)
    {
       /* second byte of an extended key */
       if (scancode < 0x60)
-      {
          normal_keys[scancode | (1 << 8)] = make_break;
-      }
 
       buffer = 0;
    }
    else if (buffer >= 0xE1 && buffer <= 0xE2)
-   {
       buffer = 0; /* ignore these extended keys */
-   }
    else if (rawcode >= 0xE0 && rawcode <= 0xE2)
-   {
       buffer = rawcode; /* first byte of an extended key */
-   }
    else if (scancode < 0x60)
-   {
       normal_keys[scancode] = make_break;
-   }
 
    outp(0x20, 0x20); /* must send EOI to finish interrupt */
 }
@@ -151,35 +143,26 @@ static const char *dos_joypad_name(unsigned pad)
 
 static void dos_joypad_autodetect_add(unsigned autoconf_pad)
 {
-   if (!input_autoconfigure_connect(
+   input_autoconfigure_connect(
          dos_joypad_name(autoconf_pad),
          NULL,
          dos_joypad.ident,
          autoconf_pad,
          0,
          0
-         ))
-      input_config_set_device_name(autoconf_pad, dos_joypad_name(autoconf_pad));
+         );
 }
 
-static bool dos_joypad_init(void *data)
+static void *dos_joypad_init(void *data)
 {
    hook_keyb_int();
-
    dos_joypad_autodetect_add(0);
-
-   (void)data;
-
-   return true;
+   return (void*)-1;
 }
 
-static bool dos_joypad_button(unsigned port_num, uint16_t key)
+static int16_t dos_joypad_button_state(
+      uint16_t *buf, uint16_t joykey)
 {
-   uint16_t *buf = dos_keyboard_state_get(port_num);
-
-   if (port_num >= MAX_PADS)
-      return false;
-
    switch (key)
    {
       case RETRO_DEVICE_ID_JOYPAD_A:
@@ -204,17 +187,55 @@ static bool dos_joypad_button(unsigned port_num, uint16_t key)
          return buf[DOSKEY_RIGHT];
    }
 
-   return false;
+   return 0;
 }
+
+static int16_t dos_joypad_button(unsigned port_num, uint16_t joykey)
+{
+   uint16_t *buf = dos_keyboard_state_get(port_num);
+
+   if (port_num >= DEFAULT_MAX_PADS)
+      return 0;
+   return dos_joypad_button_state(buf, joykey);
+}
+
+static int16_t dos_joypad_axis(unsigned port_num, uint32_t joyaxis) { return 0; }
+
+static int16_t dos_joypad_state(
+      rarch_joypad_info_t *joypad_info,
+      const struct retro_keybind *binds,
+      unsigned port)
+{
+   unsigned i;
+   int16_t ret                          = 0;
+   uint16_t port_idx                    = joypad_info->joy_idx;
+   uint16_t *buf                        = dos_keyboard_state_get(port_idx);
+
+   if (port_idx >= DEFAULT_MAX_PADS)
+      return 0;
+
+   for (i = 0; i < RARCH_FIRST_CUSTOM_BIND; i++)
+   {
+      /* Auto-binds are per joypad, not per user. */
+      const uint64_t joykey  = (binds[i].joykey != NO_BTN)
+         ? binds[i].joykey  : joypad_info->auto_binds[i].joykey;
+      if ((uint16_t)joykey != NO_BTN && dos_joypad_button_state(
+               buf, (uint16_t)joykey))
+         ret |= ( 1 << i);
+   }
+
+   return ret;
+}
+
 
 static void dos_joypad_poll(void)
 {
    uint32_t i;
 
-   for (i = 0; i <= MAX_PADS; i++)
+   for (i = 0; i <= DEFAULT_MAX_PADS; i++)
    {
-      uint16_t *cur_state = dos_keyboard_state_get(i);
       uint32_t key;
+      uint16_t *cur_state = dos_keyboard_state_get(i);
 
       for (key = 0; key < LAST_KEYCODE; key++)
       {
@@ -235,11 +256,6 @@ static bool dos_joypad_query_pad(unsigned pad)
    return (pad < MAX_USERS);
 }
 
-static int16_t dos_joypad_axis(unsigned port_num, uint32_t joyaxis)
-{
-   return 0;
-}
-
 static void dos_joypad_destroy(void)
 {
    unhook_keyb_int();
@@ -250,6 +266,7 @@ input_device_driver_t dos_joypad = {
    dos_joypad_query_pad,
    dos_joypad_destroy,
    dos_joypad_button,
+   dos_joypad_state,
    NULL,
    dos_joypad_axis,
    dos_joypad_poll,

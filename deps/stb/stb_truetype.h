@@ -288,7 +288,7 @@
 #define __STB_INCLUDE_STB_TRUETYPE_H__
 
 #ifdef STBTT_STATIC
-#define STBTT_DEF static
+#define STBTT_DEF STATIC
 #else
 #define STBTT_DEF extern
 #endif
@@ -812,6 +812,7 @@ enum
 #endif /* __STB_INCLUDE_STB_TRUETYPE_H__ */
 
 #include <retro_assert.h>
+#include <retro_endianness.h>
 
 /* IMPLEMENTATION */
 
@@ -1876,6 +1877,7 @@ static void stbtt__handle_clipped_edge(float *scanline, int x, stbtt__active_edg
       y1 = e->ey;
    }
 
+#if 0
    if (x0 == x)
       assert(x1 <= x+1);
    else if (x0 == x+1)
@@ -1886,13 +1888,16 @@ static void stbtt__handle_clipped_edge(float *scanline, int x, stbtt__active_edg
       assert(x1 >= x+1);
    else
       assert(x1 >= x && x1 <= x+1);
+#endif
 
    if (x0 <= x && x1 <= x)
       scanline[x] += e->direction * (y1-y0);
    else if (x0 >= x+1 && x1 >= x+1)
       ;
    else {
+#if 0
       assert(x0 >= x && x0 <= x+1 && x1 >= x && x1 <= x+1);
+#endif
       scanline[x] += e->direction * (y1-y0) * (1-((x0-x)+(x1-x))/2); /* coverage = 1 - average x position */
    }
 }
@@ -1974,11 +1979,17 @@ static void stbtt__fill_active_edges_new(float *scanline, float *scanline_fill,
                   float t;
                   y0 = y_bottom - (y0 - y_top);
                   y1 = y_bottom - (y1 - y_top);
-                  t = y0, y0 = y1, y1 = t;
-                  t = x_bottom, x_bottom = x_top, x_top = t;
+                   t = y0;
+                   y0 = y1;
+                   y1 = t;
+                   t = x_bottom;
+                   x_bottom = x_top;
+                   x_top = t;
                   dx = -dx;
                   dy = -dy;
-                  t = x0, x0 = xb, xb = t;
+                   t = x0;
+                   x0 = xb;
+                   xb = t;
                }
 
                x1 = (int) x_top;
@@ -2293,7 +2304,8 @@ static void stbtt__rasterize(stbtt__bitmap *result, stbtt__point *pts, int *wcou
          e[n].invert = 0;
          if (invert ? p[j].y > p[k].y : p[j].y < p[k].y) {
             e[n].invert = 1;
-            a=j,b=k;
+             a=j;
+             b=k;
          }
          e[n].x0 = p[a].x * scale_x + shift_x;
          e[n].y0 = (p[a].y * y_scale_inv + shift_y) * vsubsample;
@@ -2396,11 +2408,13 @@ static stbtt__point *stbtt_FlattenCurves(stbtt_vertex *vertices, int num_verts,
                ++n;
                start = num_points;
 
-               x = vertices[i].x, y = vertices[i].y;
+                 x = vertices[i].x;
+                 y = vertices[i].y;
                stbtt__add_point(points, num_points++, x,y);
                break;
             case STBTT_vline:
-               x = vertices[i].x, y = vertices[i].y;
+                 x = vertices[i].x;
+                 y = vertices[i].y;
                stbtt__add_point(points, num_points++, x, y);
                break;
             case STBTT_vcurve:
@@ -2408,7 +2422,8 @@ static stbtt__point *stbtt_FlattenCurves(stbtt_vertex *vertices, int num_verts,
                                         vertices[i].cx, vertices[i].cy,
                                         vertices[i].x,  vertices[i].y,
                                         objspace_flatness_squared, 0);
-               x = vertices[i].x, y = vertices[i].y;
+                 x = vertices[i].x;
+                 y = vertices[i].y;
                break;
          }
       }
@@ -2581,7 +2596,10 @@ STBTT_DEF int stbtt_BakeFontBitmap(
       gw = x1-x0;
       gh = y1-y0;
       if (x + gw + 1 >= pw)
-         y = bottom_y, x = 1; /* advance to next row */
+      {
+          y = bottom_y;
+          x = 1; /* advance to next row */
+      }
       if (y + gh + 1 >= ph) /* check if it fits vertically AFTER potentially moving to next row */
          return -i;
       retro_assert(x+gw < pw);

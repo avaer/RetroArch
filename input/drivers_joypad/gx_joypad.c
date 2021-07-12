@@ -21,12 +21,15 @@
 #include <wiiuse/wpad.h>
 #endif
 
+#include "../../config.def.h"
+
 #include "../../tasks/tasks_internal.h"
 
 #ifdef GEKKO
 #define WPADInit WPAD_Init
 #define WPADDisconnect WPAD_Disconnect
 #define WPADProbe WPAD_Probe
+#define WPADSetDataFormat WPAD_SetDataFormat
 #endif
 
 #define WPAD_EXP_SICKSAXIS     252
@@ -39,8 +42,27 @@
 #define NUM_DEVICES 1
 #endif
 
-#ifndef MAX_PADS
-#define MAX_PADS 4
+#ifdef HW_RVL
+#define MAX_MOUSEBUTTONS 6
+static const uint32_t gx_mousemask[MAX_MOUSEBUTTONS] = 
+{
+   WPAD_BUTTON_B,
+   WPAD_BUTTON_A,
+   WPAD_BUTTON_1,
+   WPAD_BUTTON_2, 
+   WPAD_BUTTON_PLUS,
+   WPAD_BUTTON_MINUS
+};
+
+struct gx_mousedata
+{
+   int32_t x, y;
+   uint32_t mouse_button;
+   bool valid;
+};
+
+/* TODO/FIXME - static global */
+static struct gx_mousedata gx_mouse[2];
 #endif
 
 enum
@@ -98,12 +120,14 @@ enum
 #define GC_JOYSTICK_THRESHOLD (48 * 256)
 #define WII_JOYSTICK_THRESHOLD (40 * 256)
 
+/* TODO/FIXME - global referenced outside */
 extern uint64_t lifecycle_state;
-static uint64_t pad_state[MAX_PADS];
-static uint32_t pad_type[MAX_PADS] = { WPAD_EXP_NOCONTROLLER, WPAD_EXP_NOCONTROLLER, WPAD_EXP_NOCONTROLLER, WPAD_EXP_NOCONTROLLER };
-static int16_t analog_state[MAX_PADS][2][2];
-static bool g_menu = false;
 
+/* TODO/FIXME - static globals */
+static uint64_t pad_state[DEFAULT_MAX_PADS];
+static uint32_t pad_type[DEFAULT_MAX_PADS] = { WPAD_EXP_NOCONTROLLER, WPAD_EXP_NOCONTROLLER, WPAD_EXP_NOCONTROLLER, WPAD_EXP_NOCONTROLLER };
+static int16_t analog_state[DEFAULT_MAX_PADS][2][2];
+static bool g_menu = false;
 #ifdef HW_RVL
 static bool g_quit = false;
 
@@ -117,6 +141,47 @@ static void reset_cb(void)
 {
    g_menu = true;
 }
+
+#ifdef HW_RVL
+static inline void gx_mouse_info(uint32_t joybutton, unsigned port)
+{
+   uint8_t i;
+   ir_t ir;
+
+   /* Get the IR data from the wiimote */
+   WPAD_IR(port, &ir);
+   if (ir.valid)
+   {
+      gx_mouse[port].valid = true;
+      gx_mouse[port].x = ir.x;
+      gx_mouse[port].y = ir.y;
+   }
+   else
+   {
+      gx_mouse[port].valid = false;
+   }
+
+   /* reset button state */
+   gx_mouse[port].mouse_button = 0; 
+   for (i = 0; i < MAX_MOUSEBUTTONS; i++)
+      gx_mouse[port].mouse_button |= (joybutton & gx_mousemask[i]) ? (1 << i) : 0;
+
+   /* Small adjustment to match the RA buttons */
+   gx_mouse[port].mouse_button = gx_mouse[port].mouse_button << 2;
+}
+
+bool gxpad_mousevalid(unsigned port)
+{
+   return gx_mouse[port].valid;
+}
+
+void gx_joypad_read_mouse(unsigned port, int *irx, int *iry, uint32_t *button)
+{
+   *irx    = gx_mouse[port].x;
+   *iry    = gx_mouse[port].y;
+   *button = gx_mouse[port].mouse_button;
+}
+#endif
 
 static const char *gx_joypad_name(unsigned pad)
 {
@@ -142,29 +207,53 @@ static void handle_hotplug(unsigned port, uint32_t ptype)
    pad_type[port] = ptype;
 
    if (ptype != WPAD_EXP_NOCONTROLLER)
-   {
-      if (!input_autoconfigure_connect(
+      input_autoconfigure_connect(
             gx_joypad_name(port),
             NULL,
             gx_joypad.ident,
             port,
             0,
             0
-            ))
-         input_config_set_device_name(port, gx_joypad_name(port));
+            );
+}
+
+static void check_port0_active(uint8_t pad_count)
+{
+   settings_t *settings = config_get_ptr();
+   int idx = settings->uints.input_joypad_map[0];
+
+   if(pad_count < 2 && idx != 0)
+   {
+#ifdef HW_RVL
+      pad_type[0] = WPAD_EXP_NONE;
+#else
+      pad_type[0] = WPAD_EXP_GAMECUBE;
+#endif
+      settings->uints.input_joypad_map[0] = 0;
+               
+      input_autoconfigure_connect(
+            gx_joypad_name(0),
+            NULL,
+            gx_joypad.ident,
+            0, // port
+            0,
+            0
+            );
+
+      input_config_set_device_name(0, gx_joypad_name(0));
    }
 }
 
-static bool gx_joypad_button(unsigned port, uint16_t key)
+static int16_t gx_joypad_button(unsigned port, uint16_t joykey)
 {
-   if (port >= MAX_PADS)
-      return false;
-   return (pad_state[port] & (UINT64_C(1) << key));
+   if (port >= DEFAULT_MAX_PADS)
+      return 0;
+   return (pad_state[port] & (UINT64_C(1) << joykey));
 }
 
 static void gx_joypad_get_buttons(unsigned port, input_bits_t *state)
 {
-	if (port < MAX_PADS)
+	if (port < DEFAULT_MAX_PADS)
    {
 		BITS_COPY16_PTR( state, pad_state[port] );
 	}
@@ -172,49 +261,85 @@ static void gx_joypad_get_buttons(unsigned port, input_bits_t *state)
 		BIT256_CLEAR_ALL_PTR(state);
 }
 
-static int16_t gx_joypad_axis(unsigned port, uint32_t joyaxis)
+static int16_t gx_joypad_axis_state(unsigned port, uint32_t joyaxis)
 {
    int val     = 0;
    int axis    = -1;
    bool is_neg = false;
    bool is_pos = false;
 
-   if (joyaxis == AXIS_NONE || port >= MAX_PADS)
-      return 0;
-
    if (AXIS_NEG_GET(joyaxis) < 4)
    {
-      axis = AXIS_NEG_GET(joyaxis);
-      is_neg = true;
+      axis     = AXIS_NEG_GET(joyaxis);
+      is_neg   = true;
    }
    else if (AXIS_POS_GET(joyaxis) < 4)
    {
-      axis = AXIS_POS_GET(joyaxis);
-      is_pos = true;
+      axis     = AXIS_POS_GET(joyaxis);
+      is_pos   = true;
    }
 
    switch (axis)
    {
       case 0:
-         val = analog_state[port][0][0];
+         val   = analog_state[port][0][0];
          break;
       case 1:
-         val = analog_state[port][0][1];
+         val   = analog_state[port][0][1];
          break;
       case 2:
-         val = analog_state[port][1][0];
+         val   = analog_state[port][1][0];
          break;
       case 3:
-         val = analog_state[port][1][1];
+         val   = analog_state[port][1][1];
          break;
    }
 
    if (is_neg && val > 0)
-      val = 0;
+      val      = 0;
    else if (is_pos && val < 0)
-      val = 0;
-
+      val      = 0;
    return val;
+}
+
+static int16_t gx_joypad_axis(unsigned port, uint32_t joyaxis)
+{
+   if (port >= DEFAULT_MAX_PADS)
+      return 0;
+   return gx_joypad_axis_state(port, joyaxis);
+}
+
+static int16_t gx_joypad_state(
+      rarch_joypad_info_t *joypad_info,
+      const struct retro_keybind *binds,
+      unsigned port)
+{
+   unsigned i;
+   int16_t ret                          = 0;
+   uint16_t port_idx                    = joypad_info->joy_idx;
+
+   if (port_idx >= DEFAULT_MAX_PADS)
+      return 0;
+
+   for (i = 0; i < RARCH_FIRST_CUSTOM_BIND; i++)
+   {
+      /* Auto-binds are per joypad, not per user. */
+      const uint64_t joykey  = (binds[i].joykey != NO_BTN)
+         ? binds[i].joykey  : joypad_info->auto_binds[i].joykey;
+      const uint32_t joyaxis = (binds[i].joyaxis != AXIS_NONE)
+         ? binds[i].joyaxis : joypad_info->auto_binds[i].joyaxis;
+      if (
+            (uint16_t)joykey != NO_BTN && 
+            (pad_state[port_idx] & (UINT64_C(1) << joykey))
+         )
+         ret |= ( 1 << i);
+      else if (joyaxis != AXIS_NONE &&
+            ((float)abs(gx_joypad_axis_state(port_idx, joyaxis)) 
+             / 0x8000) > joypad_info->axis_threshold)
+         ret |= (1 << i);
+   }
+
+   return ret;
 }
 
 #ifdef HW_RVL
@@ -311,12 +436,18 @@ static int16_t WPAD_StickY(WPADData *data, u8 right)
 }
 #endif
 
+static bool gx_joypad_query_pad(unsigned pad)
+{
+   return pad < MAX_USERS && pad_type[pad] != WPAD_EXP_NOCONTROLLER;
+}
+
 static void gx_joypad_poll(void)
 {
    unsigned i, j, port;
-   uint8_t gcpad = 0;
-   uint64_t state_p1;
-   uint64_t check_menu_toggle;
+   uint64_t state_p1          = 0;
+   uint64_t check_menu_toggle = 0;
+   uint8_t pad_count          = 0;
+   uint8_t gcpad              = 0;
 
    pad_state[0] = 0;
    pad_state[1] = 0;
@@ -336,7 +467,7 @@ static void gx_joypad_poll(void)
    WPAD_ReadPending(WPAD_CHAN_ALL, NULL);
 #endif
 
-   for (port = 0; port < MAX_PADS; port++)
+   for (port = 0; port < DEFAULT_MAX_PADS; port++)
    {
       uint32_t down = 0, ptype = WPAD_EXP_NOCONTROLLER;
       uint64_t *state_cur = &pad_state[port];
@@ -386,6 +517,11 @@ static void gx_joypad_poll(void)
 
          down = wpaddata->btns_h;
 
+         /* Mouse & Lightgun: Retrieve IR data */
+         if (ptype == WPAD_EXP_NONE)
+            if (port == WPAD_CHAN_0 || port == WPAD_CHAN_1)
+               gx_mouse_info(wpaddata->btns_h, port);
+
          *state_cur |= (down & WPAD_BUTTON_A) ? (UINT64_C(1) << GX_WIIMOTE_A) : 0;
          *state_cur |= (down & WPAD_BUTTON_B) ? (UINT64_C(1) << GX_WIIMOTE_B) : 0;
          *state_cur |= (down & WPAD_BUTTON_1) ? (UINT64_C(1) << GX_WIIMOTE_1) : 0;
@@ -393,6 +529,8 @@ static void gx_joypad_poll(void)
          *state_cur |= (down & WPAD_BUTTON_PLUS) ? (UINT64_C(1) << GX_WIIMOTE_PLUS) : 0;
          *state_cur |= (down & WPAD_BUTTON_MINUS) ? (UINT64_C(1) << GX_WIIMOTE_MINUS) : 0;
          *state_cur |= (down & WPAD_BUTTON_HOME) ? (UINT64_C(1) << GX_WIIMOTE_HOME) : 0;
+
+
 
          if (ptype != WPAD_EXP_NUNCHUK)
          {
@@ -444,6 +582,14 @@ static void gx_joypad_poll(void)
       }
 #endif
 
+      /* Count active controllers */
+      if(gx_joypad_query_pad(port))
+         pad_count++;
+
+      /* Always enable 1 pad in port 0 if there's only 1 controller connected. 
+       * This avoids being stuck in rgui input settings. */
+      check_port0_active(pad_count);
+
       if (ptype != pad_type[port])
          handle_hotplug(port, ptype);
 
@@ -471,7 +617,7 @@ static void gx_joypad_poll(void)
       BIT64_SET(lifecycle_state, RARCH_MENU_TOGGLE);
 }
 
-static bool gx_joypad_init(void *data)
+static void *gx_joypad_init(void *data)
 {
    int i;
    SYS_SetResetCallback(reset_cb);
@@ -479,24 +625,20 @@ static bool gx_joypad_init(void *data)
    SYS_SetPowerCallback(power_callback);
 #endif
 
-   (void)data;
-
-   for (i = 0; i < MAX_PADS; i++)
+   for (i = 0; i < DEFAULT_MAX_PADS; i++)
       pad_type[i] = WPAD_EXP_NOCONTROLLER;
 
    PAD_Init();
 #ifdef HW_RVL
    WPADInit();
+   /* Set IR for all wiimotes */
+   WPAD_SetVRes(WPAD_CHAN_ALL,640,480);
+   WPAD_SetDataFormat(WPAD_CHAN_ALL,WPAD_FMT_BTNS_ACC_IR);
 #endif
 
    gx_joypad_poll();
 
-   return true;
-}
-
-static bool gx_joypad_query_pad(unsigned pad)
-{
-   return pad < MAX_USERS && pad_type[pad] != WPAD_EXP_NOCONTROLLER;
+   return (void*)-1;
 }
 
 static void gx_joypad_destroy(void)
@@ -504,7 +646,7 @@ static void gx_joypad_destroy(void)
 #ifdef HW_RVL
 #if 0
    int i;
-   for (i = 0; i < MAX_PADS; i++)
+   for (i = 0; i < DEFAULT_MAX_PADS; i++)
    {
       /* Commenting this out fixes the Wii
        * remote not reconnecting after
@@ -521,6 +663,7 @@ input_device_driver_t gx_joypad = {
    gx_joypad_query_pad,
    gx_joypad_destroy,
    gx_joypad_button,
+   gx_joypad_state,
    gx_joypad_get_buttons,
    gx_joypad_axis,
    gx_joypad_poll,

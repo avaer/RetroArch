@@ -21,21 +21,20 @@
 #include <wiiu/os.h>
 #include <wiiu/ax.h>
 
-#include "wiiu/wiiu_dbg.h"
-#include "wiiu/system/memory.h"
+#include "../../wiiu/wiiu_dbg.h"
+#include "../../wiiu/system/memory.h"
 
-#include "audio/audio_driver.h"
+#include "../../retroarch.h"
 
 typedef struct
 {
    AXMVoice* mvoice;
    uint16_t* buffer_l;
    uint16_t* buffer_r;
-   bool nonblocking;
-
+   OSSpinLock spinlock;
    uint32_t pos;
    uint32_t written;
-   OSSpinLock spinlock;
+   bool nonblock;
 } ax_audio_t;
 
 /* 3072 samples main buffer, 64ms total */
@@ -56,17 +55,19 @@ typedef struct
 static volatile ax_audio_t *wiiu_cb_ax = NULL;
 void wiiu_ax_callback(void)
 {
+   ax_audio_t *ax = NULL;
    /*possibly called before unregister */
-   if(wiiu_cb_ax == NULL)
+   if (!wiiu_cb_ax)
       return;
 
-   ax_audio_t *ax = (ax_audio_t*)wiiu_cb_ax;
-   if(AXIsMultiVoiceRunning(ax->mvoice))
+   ax = (ax_audio_t*)wiiu_cb_ax;
+
+   if (AXIsMultiVoiceRunning(ax->mvoice))
    {
-      if(OSUninterruptibleSpinLock_Acquire(&ax->spinlock))
+      if (OSUninterruptibleSpinLock_Acquire(&ax->spinlock))
       {
          /* Buffer underrun, stop playback to let it fill up */
-         if(ax->written < AX_AUDIO_SAMPLE_MIN)
+         if (ax->written < AX_AUDIO_SAMPLE_MIN)
             AXSetMultiVoiceState(ax->mvoice, AX_VOICE_STATE_STOPPED);
          ax->written -= AX_AUDIO_SAMPLE_COUNT;
          OSUninterruptibleSpinLock_Release(&ax->spinlock);
@@ -84,7 +85,7 @@ static void* ax_audio_init(const char* device, unsigned rate, unsigned latency,
    u16 setup_buf[0x30] = {0};
    setup_buf[0x25]     = 2; /* we request 2 channels */
    AXInitParams init   = {AX_INIT_RENDERER_48KHZ, 0, 0};
-   AXVoiceVeData ve    = {0xF000, 0};
+   AXVoiceVeData ve    = {0x8000, 0};
    ax_audio_t* ax      = (ax_audio_t*)calloc(1, sizeof(ax_audio_t));
 
    if (!ax)
@@ -100,7 +101,7 @@ static void* ax_audio_init(const char* device, unsigned rate, unsigned latency,
       return NULL;
    }
 
-   ax->buffer_l               = MEM1_alloc(AX_AUDIO_SIZE, 0x100);
+   ax->buffer_l              = MEM1_alloc(AX_AUDIO_SIZE, 0x100);
    ax->buffer_r              = MEM1_alloc(AX_AUDIO_SIZE, 0x100);
    memset(ax->buffer_l,0,AX_AUDIO_SIZE);
    memset(ax->buffer_r,0,AX_AUDIO_SIZE);
@@ -166,9 +167,9 @@ static bool ax_audio_stop(void* data)
 
 static int ax_audio_limit(int in)
 {
-	if(in < 0)
+	if (in < 0)
 		in += AX_AUDIO_COUNT;
-	else if(in >= AX_AUDIO_COUNT)
+	else if (in >= AX_AUDIO_COUNT)
 		in -= AX_AUDIO_COUNT;
 	return in;
 }
@@ -183,57 +184,62 @@ static bool ax_audio_start(void* data, bool is_shutdown)
       return true;
 
    /* Set back to playing on enough buffered data */
-   if(ax->written > AX_AUDIO_SAMPLE_LOAD)
+   if (ax->written > AX_AUDIO_SAMPLE_LOAD)
    {
-      AXSetMultiVoiceCurrentOffset(ax->mvoice, ax_audio_limit(ax->pos - ax->written));
+      AXSetMultiVoiceCurrentOffset(ax->mvoice,
+            ax_audio_limit(ax->pos - ax->written));
       AXSetMultiVoiceState(ax->mvoice, AX_VOICE_STATE_PLAYING);
    }
+
    return true;
 }
 
 static ssize_t ax_audio_write(void* data, const void* buf, size_t size)
 {
    uint32_t i;
-   size_t countAvail   = 0;
+   size_t count_avail  = 0;
    ax_audio_t* ax      = (ax_audio_t*)data;
    const uint16_t* src = buf;
    size_t count        = size >> 2;
 
-   if(!size || (size & 0x3))
+   if (!size || (size & 0x3))
       return 0;
 
-   if(count > AX_AUDIO_MAX_FREE)
-      count = AX_AUDIO_MAX_FREE;
+   if (count > AX_AUDIO_MAX_FREE)
+      count            = AX_AUDIO_MAX_FREE;
 
-   countAvail = ((ax->written > AX_AUDIO_MAX_FREE) ? 0 : (AX_AUDIO_MAX_FREE - ax->written));
+   count_avail         = (
+         (ax->written > AX_AUDIO_MAX_FREE) 
+         ? 0 
+         : (AX_AUDIO_MAX_FREE - ax->written));
 
-   if (ax->nonblocking)
+   if (ax->nonblock)
    {
       /* Not enough available for 3ms of data */
-      if(countAvail < AX_AUDIO_SAMPLE_COUNT)
+      if (count_avail < AX_AUDIO_SAMPLE_COUNT)
          count = 0;
    }
-   else if(countAvail < count)
+   else if (count_avail < count)
    {
       /* Sync, wait for free memory */
-      while(AXIsMultiVoiceRunning(ax->mvoice) && (countAvail < count))
+      while (AXIsMultiVoiceRunning(ax->mvoice) && (count_avail < count))
       {
          OSYieldThread(); /* Gives threads with same priority time to run */
-         countAvail = (ax->written > AX_AUDIO_MAX_FREE ? 0 : (AX_AUDIO_MAX_FREE - ax->written));
+         count_avail = (ax->written > AX_AUDIO_MAX_FREE ? 0 : (AX_AUDIO_MAX_FREE - ax->written));
       }
    }
 
    /* Over available space, do as much as possible */
-   if(count > countAvail)
-      count = countAvail;
+   if (count > count_avail)
+      count = count_avail;
 
    /* make sure we have input size */
-   if(count > 0)
+   if (count > 0)
    {
       /* write in new data */
-      size_t startPos   = ax->pos;
-      int flushP2needed = 0;
-      int flushP2       = 0;
+      size_t start_pos    = ax->pos;
+      int flush_p2_needed = 0;
+      int flush_p2       = 0;
 
       for (i = 0; i < (count << 1); i += 2)
       {
@@ -242,30 +248,31 @@ static ssize_t ax_audio_write(void* data, const void* buf, size_t size)
          ax->pos               = ax_audio_limit(ax->pos + 1);
 
          /* wrapped around, make sure to store cache */
-         if(ax->pos == 0)
+         if (ax->pos == 0)
          {
-            flushP2needed = 1;
-            flushP2       = ((count << 1) - i);
-            DCStoreRangeNoSync(ax->buffer_l+startPos, (AX_AUDIO_COUNT-startPos) << 1);
-            DCStoreRangeNoSync(ax->buffer_r+startPos, (AX_AUDIO_COUNT-startPos) << 1);
+            flush_p2_needed = 1;
+            flush_p2       = ((count << 1) - i);
+            DCStoreRangeNoSync(ax->buffer_l + start_pos,
+                  (AX_AUDIO_COUNT - start_pos) << 1);
+            DCStoreRangeNoSync(ax->buffer_r + start_pos, (AX_AUDIO_COUNT - start_pos) << 1);
          }
       }
 
       /* standard cache store case */
-      if(!flushP2needed)
+      if (!flush_p2_needed)
       {
-         DCStoreRangeNoSync(ax->buffer_l+startPos, count << 1);
-         DCStoreRange(ax->buffer_r+startPos, count << 1);
+         DCStoreRangeNoSync(ax->buffer_l + start_pos, count << 1);
+         DCStoreRange(ax->buffer_r + start_pos, count << 1);
       }
       /* store the rest after wrap */
-      else if(flushP2 > 0)
+      else if (flush_p2 > 0)
       {
-         DCStoreRangeNoSync(ax->buffer_l, flushP2);
-         DCStoreRange(ax->buffer_r, flushP2);
+         DCStoreRangeNoSync(ax->buffer_l, flush_p2);
+         DCStoreRange(ax->buffer_r, flush_p2);
       }
 
       /* add in new audio data */
-      if(OSUninterruptibleSpinLock_Acquire(&ax->spinlock))
+      if (OSUninterruptibleSpinLock_Acquire(&ax->spinlock))
       {
          ax->written += count;
          OSUninterruptibleSpinLock_Release(&ax->spinlock);
@@ -276,7 +283,7 @@ static ssize_t ax_audio_write(void* data, const void* buf, size_t size)
     *
     * checks if it can be started
     */
-   if(!AXIsMultiVoiceRunning(ax->mvoice))
+   if (!AXIsMultiVoiceRunning(ax->mvoice))
       ax_audio_start(ax, false);
 
    /* return what was actually copied */
@@ -294,30 +301,22 @@ static void ax_audio_set_nonblock_state(void* data, bool state)
    ax_audio_t* ax = (ax_audio_t*)data;
 
    if (ax)
-      ax->nonblocking = state;
+      ax->nonblock = state;
 }
 
-static bool ax_audio_use_float(void* data)
-{
-   (void)data;
-   return false;
-}
+static bool ax_audio_use_float(void* data) { return false; }
 
 static size_t ax_audio_write_avail(void* data)
 {
    ax_audio_t* ax = (ax_audio_t*)data;
-
    size_t ret = AX_AUDIO_COUNT - ax->written;
-
    return (ret < AX_AUDIO_SAMPLE_COUNT ? 0 : ret);
 }
 
 static size_t ax_audio_buffer_size(void* data)
 {
-   (void)data;
    return AX_AUDIO_COUNT;
 }
-
 
 audio_driver_t audio_ax =
 {
@@ -332,6 +331,6 @@ audio_driver_t audio_ax =
    "AX",
    NULL, /* device_list_new */
    NULL, /* device_list_free */
-   NULL, /* write_avail */
-   NULL, /* buffer_size */
+   ax_audio_write_avail,
+   ax_audio_buffer_size,
 };

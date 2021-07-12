@@ -26,7 +26,8 @@
 #include "../../config.h"
 #endif
 
-#include "../video_driver.h"
+#include "../../retroarch.h"
+#include "../../verbosity.h"
 
 #ifdef HAVE_EGL
 #include "../common/egl_common.h"
@@ -41,22 +42,18 @@ typedef struct
 #ifdef HAVE_EGL
    egl_ctx_data_t egl;
 #endif
+   int initial_width;
+   int initial_height;
    unsigned fb_width;
    unsigned fb_height;
 } emscripten_ctx_data_t;
 
-static int emscripten_initial_width;
-static int emscripten_initial_height;
-static enum gfx_ctx_api emscripten_api = GFX_CTX_NONE;
-
-static void gfx_ctx_emscripten_swap_interval(void *data, unsigned interval)
+static void gfx_ctx_emscripten_swap_interval(void *data, int interval)
 {
-   (void)data;
-
    if (interval == 0)
       emscripten_set_main_loop_timing(EM_TIMING_SETIMMEDIATE, 0);
    else
-      emscripten_set_main_loop_timing(EM_TIMING_RAF, (int)interval);
+      emscripten_set_main_loop_timing(EM_TIMING_RAF, interval);
 }
 
 static void gfx_ctx_emscripten_get_canvas_size(int *width, int *height)
@@ -90,7 +87,7 @@ static void gfx_ctx_emscripten_get_canvas_size(int *width, int *height)
 }
 
 static void gfx_ctx_emscripten_check_window(void *data, bool *quit,
-      bool *resize, unsigned *width, unsigned *height, bool is_shutdown)
+      bool *resize, unsigned *width, unsigned *height)
 {
    EMSCRIPTEN_RESULT r;
    int input_width;
@@ -101,8 +98,8 @@ static void gfx_ctx_emscripten_check_window(void *data, bool *quit,
 
    if (input_width == 0 || input_height == 0)
    {
-      input_width = emscripten_initial_width;
-      input_height = emscripten_initial_height;
+      input_width          = emscripten->initial_width;
+      input_height         = emscripten->initial_height;
       emscripten->fb_width = emscripten->fb_height = 0;
    }
 
@@ -134,12 +131,12 @@ static void gfx_ctx_emscripten_check_window(void *data, bool *quit,
    *quit       = false;
 }
 
-static void gfx_ctx_emscripten_swap_buffers(void *data, void *data2)
+static void gfx_ctx_emscripten_swap_buffers(void *data)
 {
    emscripten_ctx_data_t *emscripten = (emscripten_ctx_data_t*)data;
 
-   /* doesn't really do anything in WebGL, but it might if we use WebGL workers
-    * in the future */
+   /* doesn't really do anything in WebGL, but it might 
+    * if we use WebGL workers in the future */
 #ifdef HAVE_EGL
    egl_swap_buffers(&emscripten->egl);
 #endif
@@ -164,13 +161,14 @@ static void gfx_ctx_emscripten_destroy(void *data)
    if (!emscripten)
       return;
 
+#ifdef HAVE_EGL
    egl_destroy(&emscripten->egl);
+#endif
 
    free(data);
 }
 
-static void *gfx_ctx_emscripten_init(video_frame_info_t *video_info,
-   void *video_driver)
+static void *gfx_ctx_emscripten_init(void *video_driver)
 {
 #ifdef HAVE_EGL
    unsigned width, height;
@@ -200,9 +198,13 @@ static void *gfx_ctx_emscripten_init(video_frame_info_t *video_info,
 
    (void)video_driver;
 
-   if (emscripten_initial_width == 0 || emscripten_initial_height == 0)
+   /* TODO/FIXME - why is this conditional here - shouldn't these always
+    * be grabbed? */
+   if (  emscripten->initial_width  == 0 || 
+         emscripten->initial_height == 0)
       emscripten_get_canvas_element_size("#canvas",
-         &emscripten_initial_width, &emscripten_initial_height);
+         &emscripten->initial_width,
+         &emscripten->initial_height);
 
 #ifdef HAVE_EGL
    if (g_egl_inited)
@@ -212,7 +214,7 @@ static void *gfx_ctx_emscripten_init(video_frame_info_t *video_info,
    }
 
    if (!egl_init_context(&emscripten->egl, EGL_NONE,
-      (void *)EGL_DEFAULT_DISPLAY, &major, &minor, &n, attribute_list))
+      (void *)EGL_DEFAULT_DISPLAY, &major, &minor, &n, attribute_list, NULL))
    {
       egl_report_error();
       goto error;
@@ -242,12 +244,9 @@ error:
 }
 
 static bool gfx_ctx_emscripten_set_video_mode(void *data,
-      video_frame_info_t *video_info,
       unsigned width, unsigned height,
       bool fullscreen)
 {
-   (void)data;
-
    if (g_egl_inited)
       return false;
 
@@ -255,97 +254,42 @@ static bool gfx_ctx_emscripten_set_video_mode(void *data,
    return true;
 }
 
-static enum gfx_ctx_api gfx_ctx_emscripten_get_api(void *data)
-{
-   return emscripten_api;
-}
+static enum gfx_ctx_api gfx_ctx_emscripten_get_api(void *data) { return GFX_CTX_OPENGL_ES_API; }
 
 static bool gfx_ctx_emscripten_bind_api(void *data,
       enum gfx_ctx_api api, unsigned major, unsigned minor)
 {
-   (void)data;
-   (void)major;
-   (void)minor;
-
-   emscripten_api = api;
-
-   switch (api)
-   {
-      case GFX_CTX_OPENGL_ES_API:
-         return eglBindAPI(EGL_OPENGL_ES_API);
-      default:
-         break;
-   }
+#ifdef HAVE_EGL
+   if (api == GFX_CTX_OPENGL_ES_API)
+      return egl_bind_api(EGL_OPENGL_ES_API);
+#endif
 
    return false;
 }
 
-
 static void gfx_ctx_emscripten_input_driver(void *data,
       const char *name,
-      const input_driver_t **input, void **input_data)
+      input_driver_t **input, void **input_data)
 {
-   void *rwebinput = input_rwebinput.init(name);
+   void *rwebinput = input_driver_init_wrap(&input_rwebinput, name);
 
    *input      = rwebinput ? &input_rwebinput : NULL;
    *input_data = rwebinput;
 }
 
-static bool gfx_ctx_emscripten_has_focus(void *data)
-{
-   (void)data;
+static bool gfx_ctx_emscripten_has_focus(void *data) { return g_egl_inited; }
 
-   return g_egl_inited;
-}
-
-static bool gfx_ctx_emscripten_suppress_screensaver(void *data, bool enable)
-{
-   (void)data;
-   (void)enable;
-
-   return false;
-}
-
-static bool gfx_ctx_emscripten_has_windowed(void *data)
-{
-   (void)data;
-
-   /* TODO -verify. */
-   return true;
-}
+static bool gfx_ctx_emscripten_suppress_screensaver(void *data, bool enable) { return false; }
 
 static float gfx_ctx_emscripten_translate_aspect(void *data,
-      unsigned width, unsigned height)
-{
-   (void)data;
-
-   return (float)width / height;
-}
+      unsigned width, unsigned height) { return (float)width / height; }
 
 static bool gfx_ctx_emscripten_init_egl_image_buffer(void *data,
-      const video_info_t *video)
-{
-   (void)data;
-
-   return false;
-}
+      const video_info_t *video) { return false; }
 
 static bool gfx_ctx_emscripten_write_egl_image(void *data,
       const void *frame, unsigned width, unsigned height, unsigned pitch,
-      bool rgb32, unsigned index, void **image_handle)
-{
-   (void)data;
-   return false;
-}
-
-static gfx_ctx_proc_t gfx_ctx_emscripten_get_proc_address(const char *symbol)
-{
-#ifdef HAVE_EGL
-   return egl_get_proc_address(symbol);
-#else
-   return NULL;
-#endif
-}
+      bool rgb32, unsigned index, void **image_handle) { return false; }
 
 static void gfx_ctx_emscripten_bind_hw_render(void *data, bool enable)
 {
@@ -359,14 +303,11 @@ static void gfx_ctx_emscripten_bind_hw_render(void *data, bool enable)
 static uint32_t gfx_ctx_emscripten_get_flags(void *data)
 {
    uint32_t flags = 0;
-   BIT32_SET(flags, GFX_CTX_FLAGS_NONE);
+   BIT32_SET(flags, GFX_CTX_FLAGS_SHADERS_GLSL);
    return flags;
 }
 
-static void gfx_ctx_emscripten_set_flags(void *data, uint32_t flags)
-{
-   (void)data;
-}
+static void gfx_ctx_emscripten_set_flags(void *data, uint32_t flags) { }
 
 const gfx_ctx_driver_t gfx_ctx_emscripten = {
    gfx_ctx_emscripten_init,
@@ -387,14 +328,18 @@ const gfx_ctx_driver_t gfx_ctx_emscripten = {
    NULL, /* set_resize */
    gfx_ctx_emscripten_has_focus,
    gfx_ctx_emscripten_suppress_screensaver,
-   gfx_ctx_emscripten_has_windowed,
+   false,
    gfx_ctx_emscripten_swap_buffers,
    gfx_ctx_emscripten_input_driver,
-   gfx_ctx_emscripten_get_proc_address,
+#ifdef HAVE_EGL
+   egl_get_proc_address,
+#else
+   NULL,
+#endif
    gfx_ctx_emscripten_init_egl_image_buffer,
    gfx_ctx_emscripten_write_egl_image,
    NULL,
-   "emscripten",
+   "egl_emscripten",
    gfx_ctx_emscripten_get_flags,
    gfx_ctx_emscripten_set_flags,
    gfx_ctx_emscripten_bind_hw_render,

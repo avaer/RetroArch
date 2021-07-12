@@ -30,14 +30,7 @@
 #include "mbedtls/asn1write.h"
 
 #include <string.h>
-
-#if defined(MBEDTLS_PLATFORM_C)
-#include "mbedtls/platform.h"
-#else
 #include <stdlib.h>
-#define mbedtls_calloc    calloc
-#define mbedtls_free       free
-#endif
 
 int mbedtls_asn1_write_len( unsigned char **p, unsigned char *start, size_t len )
 {
@@ -130,8 +123,7 @@ int mbedtls_asn1_write_mpi( unsigned char **p, unsigned char *start, const mbedt
     int ret;
     size_t len = 0;
 
-    // Write the MPI
-    //
+    /* Write the MPI */
     len = mbedtls_mpi_size( X );
 
     if( *p < start || (size_t)( *p - start ) < len )
@@ -140,9 +132,9 @@ int mbedtls_asn1_write_mpi( unsigned char **p, unsigned char *start, const mbedt
     (*p) -= len;
     MBEDTLS_MPI_CHK( mbedtls_mpi_write_binary( X, *p, len ) );
 
-    // DER format assumes 2s complement for numbers, so the leftmost bit
-    // should be 0 for positive numbers and 1 for negative numbers.
-    //
+    /* DER format assumes 2s complement for numbers, so the leftmost bit
+     * should be 0 for positive numbers and 1 for negative numbers.
+     */
     if( X->s ==1 && **p & 0x80 )
     {
         if( *p - start < 1 )
@@ -167,8 +159,7 @@ int mbedtls_asn1_write_null( unsigned char **p, unsigned char *start )
     int ret;
     size_t len = 0;
 
-    // Write NULL
-    //
+    /* Write NULL */
     MBEDTLS_ASN1_CHK_ADD( len, mbedtls_asn1_write_len( p, start, 0) );
     MBEDTLS_ASN1_CHK_ADD( len, mbedtls_asn1_write_tag( p, start, MBEDTLS_ASN1_NULL ) );
 
@@ -232,10 +223,10 @@ int mbedtls_asn1_write_int( unsigned char **p, unsigned char *start, int val )
     int ret;
     size_t len = 0;
 
-    // TODO negative values and values larger than 128
-    // DER format assumes 2s complement for numbers, so the leftmost bit
-    // should be 0 for positive numbers and 1 for negative numbers.
-    //
+    /* TODO negative values and values larger than 128
+     * DER format assumes 2s complement for numbers, so the leftmost bit
+     * should be 0 for positive numbers and 1 for negative numbers.
+     */
     if( *p - start < 1 )
         return( MBEDTLS_ERR_ASN1_BUF_TOO_SMALL );
 
@@ -295,8 +286,7 @@ int mbedtls_asn1_write_bitstring( unsigned char **p, unsigned char *start,
 
     size = ( bits / 8 ) + ( ( bits % 8 ) ? 1 : 0 );
 
-    // Calculate byte length
-    //
+    /* Calculate byte length */
     if( *p < start || (size_t)( *p - start ) < size + 1 )
         return( MBEDTLS_ERR_ASN1_BUF_TOO_SMALL );
 
@@ -304,8 +294,7 @@ int mbedtls_asn1_write_bitstring( unsigned char **p, unsigned char *start,
     (*p) -= size;
     memcpy( *p, buf, size );
 
-    // Write unused bits
-    //
+    /* Write unused bits */
     *--(*p) = (unsigned char) (size * 8 - bits);
 
     MBEDTLS_ASN1_CHK_ADD( len, mbedtls_asn1_write_len( p, start, len ) );
@@ -337,29 +326,28 @@ mbedtls_asn1_named_data *mbedtls_asn1_store_named_data( mbedtls_asn1_named_data 
 
     if( ( cur = mbedtls_asn1_find_named_data( *head, oid, oid_len ) ) == NULL )
     {
-        // Add new entry if not present yet based on OID
-        //
-        cur = (mbedtls_asn1_named_data*)mbedtls_calloc( 1,
+        /* Add new entry if not present yet based on OID */
+        cur = (mbedtls_asn1_named_data*)calloc( 1,
                                             sizeof(mbedtls_asn1_named_data) );
         if( cur == NULL )
             return( NULL );
 
         cur->oid.len = oid_len;
-        cur->oid.p = mbedtls_calloc( 1, oid_len );
+        cur->oid.p   = (unsigned char*)(unsigned char*)(unsigned char*)(unsigned char*)(unsigned char*)(unsigned char*)(unsigned char*)(unsigned char*)(unsigned char*)calloc( 1, oid_len );
         if( cur->oid.p == NULL )
         {
-            mbedtls_free( cur );
+            free( cur );
             return( NULL );
         }
 
         memcpy( cur->oid.p, oid, oid_len );
 
         cur->val.len = val_len;
-        cur->val.p = mbedtls_calloc( 1, val_len );
+        cur->val.p   = (unsigned char*)calloc( 1, val_len );
         if( cur->val.p == NULL )
         {
-            mbedtls_free( cur->oid.p );
-            mbedtls_free( cur );
+            free( cur->oid.p );
+            free( cur );
             return( NULL );
         }
 
@@ -373,12 +361,12 @@ mbedtls_asn1_named_data *mbedtls_asn1_store_named_data( mbedtls_asn1_named_data 
          * Preserve old data until the allocation succeeded, to leave list in
          * a consistent state in case allocation fails.
          */
-        void *p = mbedtls_calloc( 1, val_len );
+        void *p = calloc( 1, val_len );
         if( p == NULL )
             return( NULL );
 
-        mbedtls_free( cur->val.p );
-        cur->val.p = p;
+        free( cur->val.p );
+        cur->val.p   = (unsigned char*)p;
         cur->val.len = val_len;
     }
 

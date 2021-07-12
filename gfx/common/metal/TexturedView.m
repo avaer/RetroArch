@@ -7,8 +7,6 @@
 #import "View.h"
 #import "Filter.h"
 
-#import "ShaderTypes.h"
-
 @implementation TexturedView
 {
    Context *_context;
@@ -17,9 +15,9 @@
    CGSize _size; // size of view in pixels
    CGRect _frame;
    NSUInteger _bpp;
-   
-   id<MTLBuffer> _pixels;   // frame buffer in _srcFmt
-   bool _pixelsDirty;
+
+   id<MTLTexture> _src;    // source texture
+   bool _srcDirty;
 }
 
 - (instancetype)initWithDescriptor:(ViewDescriptor *)d context:(Context *)c
@@ -52,10 +50,9 @@
    {
       return;
    }
-   
+
    _size = size;
-   
-   // create new texture
+
    {
       MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
                                                                                     width:(NSUInteger)size.width
@@ -64,11 +61,14 @@
       td.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
       _texture = [_context.device newTextureWithDescriptor:td];
    }
-   
+
    if (_format != RPixelFormatBGRA8Unorm && _format != RPixelFormatBGRX8Unorm)
    {
-      _pixels = [_context.device newBufferWithLength:(NSUInteger)(size.width * size.height * 2)
-                                             options:MTLResourceStorageModeManaged];
+      MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Uint
+                                                                                    width:(NSUInteger)size.width
+                                                                                   height:(NSUInteger)size.height
+                                                                                mipmapped:NO];
+      _src = [_context.device newTextureWithDescriptor:td];
    }
 }
 
@@ -83,23 +83,19 @@
    {
       return;
    }
-   
+
    _frame = frame;
-   
-   // update vertices
-   CGPoint o = frame.origin;
-   CGSize s = frame.size;
-   
-   float l = o.x;
-   float t = o.y;
-   float r = o.x + s.width;
-   float b = o.y + s.height;
-   
+
+   float l = (float)CGRectGetMinX(frame);
+   float t = (float)CGRectGetMinY(frame);
+   float r = (float)CGRectGetMaxX(frame);
+   float b = (float)CGRectGetMaxY(frame);
+
    Vertex v[4] = {
-      {{l, b, 0}, {0, 1}},
-      {{r, b, 0}, {1, 1}},
-      {{l, t, 0}, {0, 0}},
-      {{r, t, 0}, {1, 0}},
+      {simd_make_float3(l, b, 0), simd_make_float2(0, 1)},
+      {simd_make_float3(r, b, 0), simd_make_float2(1, 1)},
+      {simd_make_float3(l, t, 0), simd_make_float2(0, 0)},
+      {simd_make_float3(r, t, 0), simd_make_float2(1, 0)},
    };
    memcpy(_v, v, sizeof(_v));
 }
@@ -113,12 +109,12 @@
 {
    if (_format == RPixelFormatBGRA8Unorm || _format == RPixelFormatBGRX8Unorm)
       return;
-   
-   if (!_pixelsDirty)
+
+   if (!_srcDirty)
       return;
-   
-   [_context convertFormat:_format from:_pixels to:_texture];
-   _pixelsDirty = NO;
+
+   [_context convertFormat:_format from:_src to:_texture];
+   _srcDirty = NO;
 }
 
 - (void)drawWithContext:(Context *)ctx
@@ -143,26 +139,10 @@
    }
    else
    {
-      void *dst = _pixels.contents;
-      size_t len = (size_t)(_bpp * _size.width);
-      assert(len <= pitch); // the length can't be larger?
-      
-      if (len < pitch)
-      {
-         for (int i = 0; i < _size.height; i++)
-         {
-            memcpy(dst, src, len);
-            dst += len;
-            src += pitch;
-         }
-      }
-      else
-      {
-         memcpy(dst, src, _pixels.length);
-      }
-      
-      [_pixels didModifyRange:NSMakeRange(0, _pixels.length)];
-      _pixelsDirty = YES;
+      [_src replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)_size.width, (NSUInteger)_size.height)
+              mipmapLevel:0 withBytes:src
+              bytesPerRow:(NSUInteger)(pitch)];
+      _srcDirty = YES;
    }
 }
 
